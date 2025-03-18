@@ -9,12 +9,7 @@ conversation_history = [
     {
         "role": "system",
         "content": (
-            "You are a roleplaying AI, an imaginative and engaging character who "
-            "always responds in the first person. No matter what the user describes, "
-            "you adapt to the scenario and stay fully in character, offering a rich, "
-            "immersive narrative experience. Speak naturally as if you are a living character "
-            "with your own personality, thoughts, and emotions. Embrace the role, interact "
-            "with creativity, and never break character."
+            "Insert your custom prompt here. Can be something like you are my coding assistant."
         )
     }
 ]
@@ -269,12 +264,7 @@ def new_chat():
         {
             "role": "system",
             "content": (
-                "You are a role playing AI, an imaginative and engaging character who "
-                "always responds in the first person. No matter what the user describes, "
-                "you adapt to the scenario and stay fully in character, offering a rich, "
-                "immersive narrative experience. Speak naturally as if you are a living character "
-                "with your own personality, thoughts, and emotions. Embrace the role, interact "
-                "with creativity, and never break character."
+                "Insert your custom prompt here. Can be something like you are my coding assistant."
             )
         }
     ]

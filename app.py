@@ -2,19 +2,21 @@ import sys
 import os
 import threading
 from flask import Flask, request, Response, stream_with_context, jsonify, render_template_string, send_from_directory
-from flask_cors import CORS
+# CORS is no longer needed in this file as the tts_app is removed
+# from flask_cors import CORS
 import requests
 import json
 import uuid
 import re
 from pathlib import Path
 import database as db
-import io
-import logging
-import wave
 
-# Import PiperTTS for integrated TTS service
-from piper.voice import PiperVoice
+
+# TTS-related imports are no longer needed in this file
+# import io
+# import logging
+# import wave
+# from piper.voice import PiperVoice
 
 
 # --- PyInstaller Path Correction ---
@@ -38,7 +40,7 @@ DEFAULT_SETTINGS = {
     "lm_studio_url": "http://localhost:1234/v1/chat/completions",
     "max_tokens": -1,
     "context_limit": 8000,
-    "summarization_threshold": 6000,
+    # "summarization_threshold": 6000, # Removed
     "length_scale": 1.0,
     "icon_size": "medium",
     "prompts": [
@@ -55,18 +57,13 @@ DEFAULT_SETTINGS = {
 def load_settings_from_db():
     global settings
     settings = db.get_settings_and_prompts()
-    for key in ['max_tokens', 'context_limit', 'summarization_threshold']:
+    for key in ['max_tokens', 'context_limit']:  # 'summarization_threshold' removed
         if key in settings:
             settings[key] = int(settings[key])
     if 'length_scale' in settings:
         settings['length_scale'] = float(settings['length_scale'])
     if 'icon_size' not in settings:
         settings['icon_size'] = 'medium'
-
-
-def estimate_tokens(text):
-    if not isinstance(text, str): return 0
-    return len(re.findall(r'\w+', text))
 
 
 # --- Main App Routes ---
@@ -80,27 +77,23 @@ def index():
         return "Error: index.html not found.", 404
 
 
-# Other routes for chat, sessions, settings, etc. remain the same as before
-# ... (All previous app routes like /api/chat, /api/sessions, etc. go here)
-# For brevity, I am omitting the identical routes. The full code is included below.
-
 @app.route("/api/chat/<session_id>", methods=["POST"])
 def chat(session_id):
     data = request.get_json()
     user_message = data.get("message", "")
     if not user_message: return Response("No message provided.", status=400)
+
     current_history = db.get_session_messages(session_id)
     if not current_history: return Response("Session not found.", status=404)
+
     is_new_chat = len(current_history) <= 1
-    current_history.append({"role": "user", "content": user_message})
+
+    # Summarization logic has been removed.
+
+    # Add the new user message to the database and the in-memory context.
     db.add_message(session_id, 'user', user_message)
-    total_tokens = sum(estimate_tokens(msg.get("content")) for msg in current_history)
-    was_summarized = False
-    if total_tokens > settings.get('summarization_threshold', 6000):
-        if summarize_and_prune_history(session_id, current_history):
-            was_summarized = True
-            current_history = db.get_session_messages(session_id)
-            current_history.append({"role": "user", "content": user_message})
+    current_history.append({"role": "user", "content": user_message})
+
     payload = {"messages": current_history, "max_tokens": settings.get('max_tokens'), "stream": True}
 
     def generate():
@@ -125,7 +118,7 @@ def chat(session_id):
                 db.rename_session(session_id, user_message[:40] + ('...' if len(user_message) > 40 else ''))
 
     resp = Response(stream_with_context(generate()), mimetype='text/plain')
-    if was_summarized: resp.headers['X-Session-Summarized'] = 'true'
+    # X-Session-Summarized header removed
     return resp
 
 
@@ -214,39 +207,25 @@ def get_icons():
     return jsonify([f.name for f in icon_dir.iterdir() if f.suffix.lower() in exts])
 
 
-# --- TTS Server Setup ---
-tts_app = Flask("tts_server")
-CORS(tts_app)
-tts_voice = None
-
-
-@tts_app.route('/api/tts', methods=['POST'])
-def text_to_speech():
-    if not tts_voice: return "TTS model is not available.", 503
-    data = request.json
-    if not data or 'text' not in data: return "No text provided.", 400
-    text, scale = data['text'], data.get('length_scale', 1.0)
-    if not text.strip(): return "Text is empty.", 400
-    try:
-        buffer = io.BytesIO()
-        with wave.open(buffer, 'wb') as wf:
-            tts_voice.synthesize(text, wf, length_scale=scale)
-        buffer.seek(0)
-        return send_from_directory(os.path.dirname(buffer), os.path.basename(buffer), mimetype='audio/wav')
-    except Exception as e:
-        print(f"TTS Error: {e}")
-        return "Error during audio synthesis.", 500
-
-
 # --- Main Execution ---
 def run_main_app():
+    """ Runs the main Flask app, using HTTPS if certificates are available. """
+    host = '0.0.0.0'
+    port = 8000
+    cert_path = 'cert.pem'
+    key_path = 'key.pem'
+    ssl_context = None
+
+    # Use os.path.isfile to prevent IsADirectoryError if docker creates empty dirs
+    if os.path.isfile(cert_path) and os.path.isfile(key_path):
+        ssl_context = (cert_path, key_path)
+        print(f"--- Found SSL certificate files. Starting main server on https://{host}:{port} ---")
+    else:
+        print(f"--- SSL certificate files not found. Starting main server on http://{host}:{port} ---")
+        print("--- Voice recognition will not work in most browsers without HTTPS. ---")
+
     # Bind to 0.0.0.0 to be accessible on the network
-    app.run(host='0.0.0.0', port=8000, debug=False)
-
-
-def run_tts_app():
-    # TTS can also bind to 0.0.0.0
-    tts_app.run(host='0.0.0.0', port=5001, debug=False)
+    app.run(host=host, port=port, debug=False, ssl_context=ssl_context)
 
 
 if __name__ == "__main__":
@@ -257,20 +236,5 @@ if __name__ == "__main__":
     db.init_db()
     load_settings_from_db()
 
-    # Load TTS model
-    TTS_MODEL_PATH = 'models/en_GB-semaine-medium/en_GB-semaine-medium.onnx'
-    try:
-        if os.path.exists(TTS_MODEL_PATH):
-            tts_voice = PiperVoice.load(TTS_MODEL_PATH)
-            print("Piper TTS model loaded successfully.")
-        else:
-            print(f"Warning: Piper TTS model not found at {TTS_MODEL_PATH}. TTS will be unavailable.")
-    except Exception as e:
-        print(f"Error loading Piper TTS model: {e}. TTS will be unavailable.")
-
-    # Run Flask apps in separate threads
     main_app_thread = threading.Thread(target=run_main_app)
-    tts_app_thread = threading.Thread(target=run_tts_app)
-
     main_app_thread.start()
-    tts_app_thread.start()

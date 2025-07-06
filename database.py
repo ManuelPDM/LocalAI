@@ -238,18 +238,6 @@ def rename_session(session_id, new_title):
     db.close()
 
 
-def replace_history_with_summary(session_id, system_prompt, summary_content):
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("DELETE FROM messages WHERE session_id = ? AND role != 'system'", (session_id,))
-    cursor.execute("UPDATE messages SET content = ? WHERE session_id = ? AND role = 'system'",
-                   (system_prompt['content'], session_id))
-    cursor.execute("INSERT INTO messages (session_id, role, content) VALUES (?, 'assistant', ?)",
-                   (session_id, f"Previous conversation summary: {summary_content}"))
-    db.commit()
-    db.close()
-
-
 def delete_last_assistant_message(session_id):
     db = get_db()
     cursor = db.cursor()

@@ -23,7 +23,10 @@
             --user-msg-bg: #004a99; --ai-msg-bg: #343a40; --system-msg-bg: #533519;
             --button-bg: #0d6efd; --button-text: #ffffff; --button-hover-bg: #0b5ed7;
         }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; overflow: hidden; }
+        html {
+            height: 100%;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: var(--bg-color); color: var(--text-color); display: flex; height: 100%; overflow: hidden; }
         .sidebar { width: 260px; background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; transition: background-color 0.3s, border-color 0.3s; }
         .sidebar-header { padding: 1rem; border-bottom: 1px solid var(--border-color); }
         #new-chat-btn { width: 100%; padding: 0.75rem; font-size: 1rem; background-color: var(--button-bg); color: var(--button-text); border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.2s; }
@@ -39,7 +42,7 @@
         .sidebar-footer { padding: 1rem; border-top: 1px solid var(--border-color); font-size: 0.9rem; }
         .footer-action { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0.5rem 0.25rem; }
         #voice-chat-toggle { transform: scale(0.8); }
-        .chat-container { flex-grow: 1; display: flex; flex-direction: column; height: 100vh; }
+        .chat-container { flex-grow: 1; display: flex; flex-direction: column; }
         #chat-box { flex-grow: 1; padding: 1rem; overflow-y: auto; }
         #new-chat-prompt-selector { padding: 0.5rem 1rem; border-bottom: 1px solid var(--border-color); background-color: var(--sidebar-bg); }
         #prompt-select-dropdown { padding: 0.25rem; border-radius: 4px; border: 1px solid var(--input-border); background-color: var(--input-bg); color: var(--text-color); }
@@ -57,10 +60,10 @@
         .message.user .message-content { background-color: var(--user-msg-bg); border-top-right-radius: 0; }
         .message.assistant .message-content { background-color: var(--ai-msg-bg); border-top-left-radius: 0; }
         .message-content pre { background-color: #282c34; color: #abb2bf; padding: 1rem; border-radius: 5px; overflow-x: auto; position: relative; }
-        .message-actions { margin-top: 8px; display: flex; gap: 8px; }
+        .message-actions { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
         .message-actions button { background: transparent; border: 1px solid var(--border-color); border-radius: 5px; padding: 4px 8px; cursor: pointer; color: var(--text-color); font-size: 1rem; }
         .message-actions button.hidden { display: none; }
-        .message-actions button.playing { color: var(--button-bg); }
+        .message-actions button.playing { color: var(--button-bg); border-color: var(--button-bg); }
         .input-area { border-top: 1px solid var(--border-color); padding: 1rem; display: flex; align-items: center; }
         #input-message { flex-grow: 1; padding: 0.75rem; border: 1px solid var(--input-border); border-radius: 5px; font-size: 1rem; resize: none; background-color: var(--input-bg); color: var(--text-color); }
         .hidden { display: none !important; }
@@ -83,6 +86,7 @@
         #pulsing-circle { width: 150px; height: 150px; border: 5px solid var(--button-bg); border-radius: 50%; animation: pulse 2s infinite ease-in-out; }
         @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.7; } 70% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.7; } }
         #voice-status-text { margin-top: 2rem; color: #ffffff; font-size: 1.5rem; text-shadow: 1px 1px 2px black; }
+        #menu-toggle-btn, #mobile-overlay { display: none; }
 
         /* Icon Sizing CSS - Updated values for a wider range */
         .icon-size-small .session-icon { width: 20px; height: 20px; }
@@ -93,9 +97,104 @@
         .icon-size-large .message .avatar { width: 48px; height: 48px; }
         .icon-size-xl .session-icon { width: 40px; height: 40px; }
         .icon-size-xl .message .avatar { width: 96px; height: 96px; }
+
+        /* --- Responsive Design for Mobile --- */
+        @media (max-width: 768px) {
+            #menu-toggle-btn {
+                display: block;
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                z-index: 1200;
+                background-color: var(--sidebar-bg);
+                color: var(--text-color);
+                border: 1px solid var(--border-color);
+                border-radius: 5px;
+                width: 44px;
+                height: 44px;
+                font-size: 24px;
+                line-height: 44px;
+                text-align: center;
+                cursor: pointer;
+                padding: 0;
+            }
+
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 100%;
+                z-index: 1100;
+                transform: translateX(-100%);
+                transition: transform 0.3s ease-in-out;
+                width: 280px; /* Slightly wider for better touch targets */
+                box-shadow: 3px 0 15px rgba(0,0,0,0.2);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            #mobile-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                z-index: 1050; /* Below sidebar */
+            }
+
+            #mobile-overlay.active {
+                display: block;
+            }
+
+            .chat-container {
+                width: 100vw;
+            }
+
+            .input-area {
+                padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+            }
+
+            #settings-modal {
+                width: 100%;
+                height: 100%;
+                max-width: none;
+                max-height: none;
+                border-radius: 0;
+                top: 0;
+                left: 0;
+                transform: none;
+                padding: 1rem;
+                box-sizing: border-box;
+                overflow-y: auto;
+            }
+
+            .prompt-editor-entry {
+                grid-template-columns: 1fr; /* Stack all elements */
+                gap: 0.5rem;
+            }
+
+            .prompt-editor-entry > div,
+            .prompt-editor-entry > textarea,
+            .prompt-editor-entry > button {
+                grid-column: 1 / -1; /* Make all items span the full width */
+                grid-row: auto; /* Let them stack naturally */
+            }
+
+            .prompt-editor-entry .remove-prompt-btn {
+                width: auto;
+                padding: 0.5rem 1rem;
+                justify-self: end; /* Align remove button to the right */
+                margin-top: 0.5rem;
+            }
+        }
     </style>
 </head>
 <body class="dark-mode">
+    <button id="menu-toggle-btn">☰</button>
+    <div id="mobile-overlay"></div>
     <div class="sidebar">
         <div class="sidebar-header"><button id="new-chat-btn">➕ New Chat</button></div>
         <ul id="session-list"></ul>
@@ -162,8 +261,7 @@
                 <legend>Context Management</legend>
                 <label for="setting-context">Context Limit (Tokens)</label>
                 <input type="number" id="setting-context" name="context_limit" step="1" required>
-                <label for="setting-summary">Summarization Threshold (Tokens)</label>
-                <input type="number" id="setting-summary" name="summarization_threshold" step="1" required>
+                <!-- Summarization threshold input removed -->
             </fieldset>
             <fieldset>
                 <legend>System Prompts / Personas</legend>
@@ -179,6 +277,9 @@
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         // --- DOM Elements ---
+        const sidebar = document.querySelector('.sidebar');
+        const menuToggleBtn = document.getElementById('menu-toggle-btn');
+        const mobileOverlay = document.getElementById('mobile-overlay');
         const sessionList = document.getElementById('session-list'), newChatBtn = document.getElementById('new-chat-btn'), chatContainer = document.querySelector('.chat-container'), chatBox = document.getElementById('chat-box'), inputMessage = document.getElementById('input-message'), sendBtn = document.getElementById('send-btn'), cancelBtn = document.getElementById('cancel-btn'), darkModeBtn = document.getElementById('dark-mode-btn'), settingsBtn = document.getElementById('settings-btn'), micBtn = document.getElementById('mic-btn');
         const settingsModal = document.getElementById('settings-modal'), settingsOverlay = document.getElementById('settings-overlay'), settingsForm = document.getElementById('settings-form'), settingsCancelBtn = document.getElementById('settings-cancel-btn');
         const newChatPromptSelector = document.getElementById('new-chat-prompt-selector'), promptSelectDropdown = document.getElementById('prompt-select-dropdown');
@@ -189,12 +290,28 @@
         const voiceStatusText = document.getElementById('voice-status-text');
 
         // --- App State ---
+        const AUTO_PLAY_KEY = 'autoPlayResponses';
         let currentSessionId = null, currentAbortController = null, currentSettings = {};
         let currentSessionInfo = { icon: 'bot.svg', ai_name: null };
         let isFullVoiceModeActive = false;
         let availableIcons = [];
+        let audioUnlocked = false;
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
+
+        // --- Audio Unlock Function ---
+        function unlockAudioContext() {
+            if (audioUnlocked) return;
+            const silentWav = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+            const sound = new Audio(silentWav);
+            sound.play().then(() => {
+                audioUnlocked = true;
+                console.log("Audio context unlocked by user gesture.");
+            }).catch(e => {
+                console.warn("Audio context unlock failed. Will try again on next interaction.", e);
+            });
+        }
+
 
         if (SpeechRecognition) {
             recognition = new SpeechRecognition();
@@ -202,7 +319,7 @@
             recognition.interimResults = false;
             recognition.onresult = handleVoiceResult;
             recognition.onend = () => {
-                if (isFullVoiceModeActive && !isAudioPlaying && audioQueue.length === 0) {
+                if (isFullVoiceModeActive && !currentAbortController) {
                     startVoiceLoop();
                 }
             };
@@ -229,6 +346,83 @@
             }
             audioQueue = [];
             isAudioPlaying = false;
+            document.querySelectorAll('.tts-msg-btn.playing').forEach(btn => {
+                btn.classList.remove('playing');
+                btn.innerHTML = '🔊';
+                btn.disabled = false;
+            });
+        };
+
+        const playTextAsSpeech = async (text, buttonElement) => {
+            unlockAudioContext();
+            if (buttonElement.classList.contains('playing')) {
+                 stopAllAudio();
+                 return;
+            }
+            stopAllAudio();
+
+            if (!text || !text.trim()) return;
+
+            const textToSynthesize = text.replace(/\*/g, '.');
+            const originalButtonContent = '🔊';
+
+            buttonElement.innerHTML = '...';
+            buttonElement.disabled = true;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                console.error("TTS request timed out.");
+            }, 10000);
+
+            try {
+                buttonElement.classList.add('playing');
+                const ttsUrl = `${window.location.protocol}//${window.location.hostname}:5001/api/tts`;
+                const response = await fetch(ttsUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: textToSynthesize.trim(),
+                        length_scale: currentSettings.length_scale || 1.0
+                    }),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) throw new Error(`TTS server error: ${response.statusText}`);
+
+                const blob = await response.blob();
+                currentAudio = new Audio(URL.createObjectURL(blob));
+                isAudioPlaying = true;
+                currentAudio.play();
+                currentAudio.onended = () => {
+                    isAudioPlaying = false;
+                    currentAudio = null;
+                    if (document.body.contains(buttonElement)) {
+                        buttonElement.classList.remove('playing');
+                        buttonElement.innerHTML = originalButtonContent;
+                        buttonElement.disabled = false;
+                    }
+                };
+            } catch (error) {
+                clearTimeout(timeoutId);
+                console.error("Single TTS Error:", error);
+                isAudioPlaying = false;
+                if (document.body.contains(buttonElement)) {
+                    buttonElement.innerHTML = '⚠️';
+                    setTimeout(() => {
+                         if (document.body.contains(buttonElement)) {
+                            buttonElement.innerHTML = originalButtonContent;
+                         }
+                    }, 2000);
+                }
+            } finally {
+                 if (document.body.contains(buttonElement) && !isAudioPlaying) {
+                    buttonElement.classList.remove('playing');
+                    buttonElement.disabled = false;
+                }
+            }
         };
 
         const processAudioQueue = async () => {
@@ -244,12 +438,15 @@
                 return;
             }
 
+            const textToSynthesize = sentence.replace(/\*/g, '.');
+
             try {
-                const response = await fetch('http://localhost:5001/api/tts', {
+                const ttsUrl = `${window.location.protocol}//${window.location.hostname}:5001/api/tts`;
+                const response = await fetch(ttsUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        text: sentence.trim(),
+                        text: textToSynthesize.trim(),
                         length_scale: currentSettings.length_scale || 1.0
                     })
                 });
@@ -260,12 +457,12 @@
                 currentAudio.play();
                 currentAudio.onended = () => {
                     isAudioPlaying = false;
-                    if (audioQueue.length === 0) {
+                    if (audioQueue.length > 0) {
+                        processAudioQueue();
+                    } else {
                         if (isFullVoiceModeActive) {
                             startVoiceLoop();
                         }
-                    } else {
-                        processAudioQueue();
                     }
                 };
             } catch (error) {
@@ -298,6 +495,7 @@
             let actionsHTML = '';
             if (role === 'assistant') {
                 actionsHTML = `<div class="message-actions">
+                                <button class="tts-msg-btn hidden" title="Read Aloud">🔊</button>
                                 <button class="regenerate-btn hidden" title="Regenerate">🔄</button>
                                </div>`;
             }
@@ -471,9 +669,7 @@
 
                 if (!response.ok) throw new Error("Failed to get response from server.");
 
-                if (response.headers.get('X-Session-Summarized') === 'true') {
-                    createMessageElement('system', 'Conversation history has been summarized to preserve context.');
-                }
+                // Check for summarization header removed
 
                 await handleStream(response, aiMessageDiv, () => {
                     updateActionButtons();
@@ -482,7 +678,7 @@
              } catch (error) {
                 if (error.name !== 'AbortError') {
                     console.error('Fetch error:', error);
-                    updateMessageContent(aiMessageDiv, `Error: ${error.message}`, false);
+                    updateMessageContent(aiMessageDiv.querySelector('.message-content'), `Error: ${error.message}`, false);
                     if (isFullVoiceModeActive) { startVoiceLoop(); }
                 } else {
                      console.log("Stream aborted by user.");
@@ -493,6 +689,7 @@
         }
 
         const sendMessage = async () => {
+            unlockAudioContext();
             const message = inputMessage.value.trim();
             if (!message) return;
 
@@ -560,7 +757,7 @@
             document.getElementById('setting-icon-size').value = currentSettings.icon_size || 'medium';
             document.getElementById('setting-speed').value = currentSettings.length_scale || 1.0;
             document.getElementById('setting-context').value = currentSettings.context_limit || 8000;
-            document.getElementById('setting-summary').value = currentSettings.summarization_threshold || 6000;
+            // Summarization value setting removed
 
             promptListEditor.innerHTML = '';
             (currentSettings.prompts || []).forEach(createPromptEditorEntry);
@@ -605,7 +802,7 @@
                 icon_size: document.getElementById('setting-icon-size').value,
                 length_scale: parseFloat(document.getElementById('setting-speed').value),
                 context_limit: parseInt(document.getElementById('setting-context').value),
-                summarization_threshold: parseInt(document.getElementById('setting-summary').value),
+                // summarization_threshold removed
                 prompts: []
             };
             promptListEditor.querySelectorAll('.prompt-editor-entry').forEach(div => {
@@ -635,14 +832,14 @@
         function startVoiceLoop() {
             if (!isFullVoiceModeActive) return;
             voiceStatusText.textContent = 'Listening...';
-            try { recognition.start(); } catch (e) { console.log("STT could not be started."); }
+            try { recognition.start(); } catch (e) { console.log("STT could not be started (might already be running)."); }
         }
 
         function stopVoiceLoop() {
             if (!isFullVoiceModeActive) return;
             isFullVoiceModeActive = false;
             stopAllAudio();
-            recognition.stop();
+            try { recognition.stop(); } catch(e) { /* ignore */ }
             if (currentAbortController) {
                 currentAbortController.abort();
                 currentAbortController = null;
@@ -680,6 +877,19 @@
         }
 
         // --- Event Listeners ---
+        document.body.addEventListener('click', unlockAudioContext, { once: true });
+        document.body.addEventListener('touchend', unlockAudioContext, { once: true });
+
+        menuToggleBtn.addEventListener('click', () => {
+            sidebar.classList.add('open');
+            mobileOverlay.classList.add('active');
+        });
+
+        mobileOverlay.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+            mobileOverlay.classList.remove('active');
+        });
+
         fullVoiceModeBtn.addEventListener('click', () => {
             if (isFullVoiceModeActive) {
                 stopVoiceLoop();
@@ -711,7 +921,13 @@
             }
         });
 
-        newChatBtn.addEventListener('click', enterNewChatMode);
+        newChatBtn.addEventListener('click', () => {
+            enterNewChatMode();
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('open');
+                mobileOverlay.classList.remove('active');
+            }
+        });
         sendBtn.addEventListener('click', sendMessage);
         inputMessage.addEventListener('keypress', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
         cancelBtn.addEventListener('click', () => { currentAbortController?.abort(); stopAllAudio(); });
@@ -720,6 +936,7 @@
             const li = e.target.closest('li');
             if (!li) return;
             const sessionId = li.dataset.sessionId;
+            let actionTaken = false;
 
             if (e.target.closest('.rename-session-btn')) {
                 const newTitle = prompt('Enter new title:', li.querySelector('.session-title').textContent);
@@ -727,6 +944,7 @@
                     fetch(`/api/sessions/${sessionId}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: newTitle }) })
                     .then(() => li.querySelector('.session-title').textContent = newTitle);
                 }
+                actionTaken = true;
             } else if (e.target.closest('.delete-session-btn')) {
                 if (confirm('Are you sure you want to delete this session?')) {
                     fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' }).then(() => {
@@ -737,21 +955,48 @@
                         }
                     });
                 }
+                actionTaken = true;
             } else if (sessionId !== currentSessionId) {
                 loadSession(sessionId);
+                actionTaken = true;
+            }
+
+            if (actionTaken && window.innerWidth <= 768) {
+                sidebar.classList.remove('open');
+                mobileOverlay.classList.remove('active');
             }
         });
+
         chatBox.addEventListener('click', (e) => {
             const regenBtn = e.target.closest('.regenerate-btn');
-            if (regenBtn) { regenerateMessage(regenBtn.closest('.message.assistant')); return; }
+            if (regenBtn) {
+                regenerateMessage(regenBtn.closest('.message.assistant'));
+                return;
+            }
+
+            const ttsBtn = e.target.closest('.tts-msg-btn');
+            if (ttsBtn) {
+                const messageDiv = ttsBtn.closest('.message.assistant');
+                if (messageDiv) {
+                    const contentDiv = messageDiv.querySelector('.message-content');
+                    const textToSpeak = contentDiv.innerText;
+                    playTextAsSpeech(textToSpeak, ttsBtn);
+                }
+                return;
+            }
         });
         darkModeBtn.addEventListener('click', () => document.body.classList.toggle('dark-mode'));
         if (recognition) micBtn.addEventListener('click', () => {
              try { recognition.start(); } catch(e) { console.log("STT could not be started."); }
         });
 
+        voiceChatToggle.addEventListener('change', (e) => {
+            localStorage.setItem(AUTO_PLAY_KEY, e.target.checked);
+        });
+
         // --- Initialization ---
         (async () => {
+            voiceChatToggle.checked = localStorage.getItem(AUTO_PLAY_KEY) === 'true';
             const response = await fetch('/api/settings');
             currentSettings = await response.json();
             applyIconSize(currentSettings.icon_size);

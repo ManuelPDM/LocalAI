@@ -1,33 +1,103 @@
 services:
-  app:
-    # Build context is the current directory '.', where the app's Dockerfile is.
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    volumes:
-      # Mount the 'data' directory from the host to '/app/data' in the container.
-      - ./data:/app/data
-      # Mount the cert.pem from the host's root project directory
-      # to '/app/cert.pem' in the container.
-      - ./cert.pem:/app/cert.pem
-      # Mount the key.pem from the host's root project directory
-      # to '/app/key.pem' in the container.
-      - ./key.pem:/app/key.pem
+  ################################
+  # API GATEWAY / REVERSE PROXY
+  ################################
+  gateway:
+    image: traefik:v2.11
+    container_name: traefik_gateway
     restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080" # For Traefik Dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./gateway/traefik.yml:/etc/traefik/traefik.yml:ro
+      # Optional: Add cert volume for real SSL
+      # - ./letsencrypt:/letsencrypt
+    networks:
+      - localai_net
+    labels:
+      - "traefik.enable=true"
+      # This makes the dashboard available at http://SERVER_IP:8080/dashboard
+      - "traefik.http.routers.dashboard.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/dashboard`)" # Changed
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=traefik"
 
-  tts:
-    # Build context is the './tts_service' directory, where the tts Dockerfile is.
-    build: ./tts_service
-    ports:
-      - "5001:5001"
-    volumes:
-      # The source path './cert.pem' is still relative to the docker-compose.yml file.
-      # This mounts the cert.pem from the host's root project directory
-      # to '/app/cert.pem' inside this tts container.
-      - ./cert.pem:/app/cert.pem
-      # Mount the key.pem from the host's root project directory
-      # to '/app/key.pem' in this tts container.
-      - ./key.pem:/app/key.pem
+  ################################
+  # FRONTEND SERVICE (SvelteKit + Nginx)
+  ################################
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend_ui
     restart: unless-stopped
+    networks:
+      - localai_net
+    labels:
+      - "traefik.enable=true"
+      # This makes the frontend the default route for all traffic
+      - "traefik.http.routers.frontend.rule=HostRegexp(`{host:.+}`)" # Changed
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.routers.frontend.entrypoints=http"
+      - "traefik.http.services.frontend-svc.loadbalancer.server.port=80"
+
+  ################################
+  # CORE SERVICE (Sessions, Settings, DB)
+  ################################
+  core-service:
+    build:
+      context: ./services/core-services
+    container_name: core_service
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    networks:
+      - localai_net
+    labels:
+      - "traefik.enable=true"
+      # Route requests like /api/sessions, /api/settings, etc.
+      - "traefik.http.routers.core-service.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/api/sessions`, `/api/settings`, `/api/icons`)" # Changed
+      - "traefik.http.routers.core-service.priority=5"
+      - "traefik.http.routers.core-service.entrypoints=http"
+      - "traefik.http.services.core-svc.loadbalancer.server.port=8000"
+
+  ################################
+  # CHAT SERVICE (LLM Interaction)
+  ################################
+  chat-service:
+    build:
+      context: ./services/chat-services
+    container_name: chat_service
+    restart: unless-stopped
+    networks:
+      - localai_net
+    environment:
+      - CORE_SERVICE_URL=http://core-service:8000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chat-service.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/api/chat`)" # Changed
+      - "traefik.http.routers.chat-service.priority=5"
+      - "traefik.http.routers.chat-service.entrypoints=http"
+      - "traefik.http.services.chat-svc.loadbalancer.server.port=8000"
+
+  ################################
+  # TTS SERVICE
+  ################################
+  tts-service:
+    build:
+      context: ./services/tts-service
+    container_name: tts_service
+    restart: unless-stopped
+    networks:
+      - localai_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tts-service.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/api/tts`)" # Changed
+      - "traefik.http.routers.tts-service.priority=10"
+      - "traefik.http.routers.tts-service.entrypoints=http"
+      - "traefik.http.services.tts-svc.loadbalancer.server.port=5001"
+
+networks:
+  localai_net:
+    driver: bridge

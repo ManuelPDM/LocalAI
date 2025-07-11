@@ -81,17 +81,9 @@ def text_to_speech():
 
 
 if __name__ == '__main__':
+    # This block is for local development and will NOT be used by Gunicorn in the Docker container.
+    # The SSL context is also not needed inside the container as Traefik handles SSL.
     host = '0.0.0.0'
     port = 5001
-    cert_path = 'cert.pem'
-    key_path = 'key.pem'
-    ssl_context = None
-
-    # Use os.path.isfile to prevent IsADirectoryError if docker creates empty dirs
-    if os.path.isfile(cert_path) and os.path.isfile(key_path):
-        ssl_context = (cert_path, key_path)
-        print(f"--- Found SSL certificate files. Starting TTS server on https://{host}:{port} ---")
-    else:
-        print(f"--- SSL certificate files not found. Starting TTS server on http://{host}:{port} ---")
-
-    app.run(host=host, port=port, debug=False, ssl_context=ssl_context)
+    print(f"--- Starting TTS server for local development on http://{host}:{port} ---")
+    app.run(host=host, port=port, debug=False)

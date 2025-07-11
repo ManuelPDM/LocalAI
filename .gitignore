@@ -1,0 +1,54 @@
+# ===================================================================
+# This is the single source of truth for the entire LocalAI project.
+# ===================================================================
+
+# --- Secrets & Environment Variables ---
+# Ignore all .env files...
+.env
+.env.*
+# ...but DO NOT ignore the example template.
+!/.env.example
+
+
+# --- Application Data ---
+# Ignore the SQLite database folder and any database files.
+data/
+*.db
+*.db-journal
+
+
+# --- Python ---
+# Ignore virtual environments, cache, and compiled files.
+__pycache__/
+venv/
+*.py[cod]
+*.egg-info/
+
+
+# --- Node.js / SvelteKit ---
+# Ignore dependency directories, logs, and build artifacts.
+node_modules/
+.svelte-kit/
+build/
+.output/
+.vercel/
+.netlify/
+.wrangler/
+
+# Ignore Vite temporary files
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Ignore logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+
+# --- IDE / OS Specific ---
+# Ignore common IDE-specific and OS-specific files.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

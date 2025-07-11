@@ -1,0 +1,7 @@
+# Ignore the node_modules directory during the Docker build.
+# The dependencies will be reinstalled fresh inside the container.
+node_modules
+
+# You can also ignore other local development files if needed
+.svelte-kit
+.env

@@ -1,0 +1,34 @@
+# Define the network entry points (ports)
+entryPoints:
+  http:
+    address: ":80"
+  # Commented out for local HTTP development.
+  # If you need HTTPS locally, you'd need self-signed certs or a local proxy with certs.
+  # https:
+  #   address: ":443"
+  # Define a dedicated entrypoint for the Traefik dashboard
+  traefik:
+    address: ":8080" # This is where you'll access the dashboard (e.g., http://localhost:8080)
+
+# Enable the API and dashboard
+# This section was missing in your file and caused the "api is not enabled" error.
+api:
+  dashboard: true # Enable the dashboard UI
+  insecure: true  # Allow access to the API and dashboard over HTTP. Set to false for production.
+
+# Tell Traefik to get its dynamic routing configuration from Docker labels
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock" # Docker socket path
+    exposedByDefault: false                 # Only services with traefik.enable=true labels will be exposed
+    network: localai_net                    # Specify the Docker network Traefik should listen on
+
+# Configure Let's Encrypt for automatic SSL certificates
+# This section is commented out for local development to avoid errors.
+# It requires a public domain and accessible ports (80/443).
+# certificatesResolvers:
+#   letsencrypt:
+#     acme:
+#       email: "${ACME_EMAIL:-your-email@example.com}" # Fallback email if env var not set
+#       storage: "/letsencrypt/acme.json" # Volume needed for persistence (e.g., - traefik-certs:/letsencrypt)
+#       tlsChallenge: {}

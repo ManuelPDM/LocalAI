@@ -32,9 +32,8 @@ try:
     if not os.path.exists(CONFIG_PATH):
         raise FileNotFoundError(f"Config file not found at: {CONFIG_PATH}")
 
-    # FINAL CORRECTION: The correct public API to instantiate the voice is the
+    # The correct public API to instantiate the voice is the
     # `load` static method, which handles creating the config and session objects internally.
-    # We must call PiperVoice.load(), not the PiperVoice() constructor directly.
     voice = PiperVoice.load(MODEL_PATH, config_path=CONFIG_PATH)
     logging.info("Piper TTS model loaded successfully.")
 
@@ -64,6 +63,14 @@ def text_to_speech():
     try:
         audio_buffer = io.BytesIO()
         with wave.open(audio_buffer, 'wb') as wave_file:
+            # --- FIX ---
+            # Set the wave file parameters based on the loaded voice model's configuration.
+            # This metadata is required before writing the audio data.
+            wave_file.setnchannels(voice.config.num_channels)
+            wave_file.setsampwidth(voice.config.sample_width)
+            wave_file.setframerate(voice.config.sample_rate)
+            # --- END FIX ---
+
             # The synthesize method requires a wave.Wave_write object, which this provides.
             voice.synthesize(text_to_synthesize, wave_file)
 

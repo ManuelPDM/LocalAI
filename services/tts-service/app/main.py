@@ -1,7 +1,6 @@
 from flask import Flask, request, send_file
 from flask_cors import CORS
 from piper.voice import PiperVoice
-from pathlib import Path
 import io
 import logging
 import wave
@@ -9,7 +8,6 @@ import os
 
 # Set up basic logging
 logging.basicConfig(level=logging.INFO)
-# Add a specific logger for this module to capture the traceback correctly
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -32,13 +30,10 @@ try:
     if not os.path.exists(CONFIG_PATH):
         raise FileNotFoundError(f"Config file not found at: {CONFIG_PATH}")
 
-    # The correct public API to instantiate the voice is the
-    # `load` static method, which handles creating the config and session objects internally.
     voice = PiperVoice.load(MODEL_PATH, config_path=CONFIG_PATH)
     logging.info("Piper TTS model loaded successfully.")
 
 except Exception as e:
-    # Use logger.exception to include the full traceback in the log
     logger.exception("FATAL: Failed to load Piper TTS model. The TTS service will not be available.")
 
 
@@ -63,15 +58,10 @@ def text_to_speech():
     try:
         audio_buffer = io.BytesIO()
         with wave.open(audio_buffer, 'wb') as wave_file:
-            # --- FIX ---
-            # Set the wave file parameters based on the loaded voice model's configuration.
-            # This metadata is required before writing the audio data.
-            wave_file.setnchannels(voice.config.num_channels)
-            wave_file.setsampwidth(voice.config.sample_width)
-            wave_file.setframerate(voice.config.sample_rate)
-            # --- END FIX ---
 
-            # The synthesize method requires a wave.Wave_write object, which this provides.
+            wave_file.setnchannels(1)
+            wave_file.setsampwidth(2)
+            wave_file.setframerate(voice.config.sample_rate)
             voice.synthesize(text_to_synthesize, wave_file)
 
         audio_buffer.seek(0)
@@ -88,8 +78,6 @@ def text_to_speech():
 
 
 if __name__ == '__main__':
-    # This block is for local development and will NOT be used by Gunicorn in the Docker container.
-    # The SSL context is also not needed inside the container as Traefik handles SSL.
     host = '0.0.0.0'
     port = 5001
     print(f"--- Starting TTS server for local development on http://{host}:{port} ---")

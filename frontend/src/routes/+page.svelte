@@ -43,9 +43,6 @@
             recognition.continuous = false;
             recognition.interimResults = false;
             recognition.onresult = handleVoiceResult;
-            // This robust onend handler acts as a safety net. It restarts listening
-            // if recognition stops for any reason (e.g., timeout from silence)
-            // as long as the app is not busy generating or speaking.
             recognition.onend = () => {
                 checkAndRestartVoiceLoop();
             };
@@ -70,12 +67,36 @@
         document.body.addEventListener('touchend', unlockAudioContext, { once: true });
     });
 
-    // Reactive statement to manage the start and stop of voice mode
     $: if (isFullVoiceModeActive) {
         startVoiceLoop();
     } else {
         stopVoiceLoopInternal();
     }
+
+    /**
+     * --- START: SCROLLING LOGIC ---
+     * Scrolls the chat box to the bottom.
+     * @param {boolean} force - If true, scrolls regardless of user's position.
+     * If false, only scrolls if the user is already near the bottom.
+     */
+    const scrollToBottom = (force = false) => {
+        if (!chatBox) return;
+
+        const scrollThreshold = 150; // A pixel value tolerance.
+        const isScrolledNearBottom = chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + scrollThreshold;
+
+        // We scroll if forced (e.g., after user sends a message) or if the user is already near the bottom.
+        if (force || isScrolledNearBottom) {
+            // Use timeout to wait for the Svelte DOM update to complete before scrolling.
+            setTimeout(() => {
+                if (chatBox) {
+                    chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
+                }
+            }, 50);
+        }
+    };
+    // --- END: SCROLLING LOGIC ---
+
 
     function unlockAudioContext() {
         if (audioUnlocked) return;
@@ -190,7 +211,7 @@
 
         if (!sentence || !sentence.trim()) {
             isAudioPlaying = false;
-            processAudioQueue(); // Process next item immediately
+            processAudioQueue();
             return;
         }
 
@@ -239,7 +260,7 @@
             };
             messages = [...messages, newMessage];
         }
-        setTimeout(() => { if (chatBox) chatBox.scrollTop = chatBox.scrollHeight; }, 0);
+        // Removed old scrolling logic from here. The new `scrollToBottom` function handles it better.
     }
 
     function finalizeMessage(messageId) {
@@ -290,6 +311,7 @@
             avatar: `/icons/${currentSessionInfo.icon || 'bot.svg'}`
         };
         messages = [...messages, newMessage];
+        scrollToBottom(); // Scroll to the new empty message bubble.
 
         let sentenceBuffer = "";
 
@@ -301,6 +323,7 @@
             const chunk = decoder.decode(value, { stream: true });
             newMessage.text += chunk;
             messages = messages;
+            scrollToBottom(); // Scroll with each new chunk of text.
 
             if (useVoice) {
                 sentenceBuffer += chunk;
@@ -364,6 +387,7 @@
             setTimeout(() => {
                 messages.forEach(msg => finalizeMessage(msg.id));
                 updateActionButtons(messages[messages.length - 1]?.id);
+                scrollToBottom(true); // Force scroll after loading a session.
             }, 50);
 
         } catch (error) {
@@ -422,8 +446,6 @@
 
     const sendMessage = async (message) => {
         unlockAudioContext();
-        // PRIMARY FIX: Use the 'message' argument if it's a string (from voice),
-        // otherwise fall back to the input box value (from button/enter key).
         const messageText = (typeof message === 'string' ? message : inputMessage.value).trim();
         if (!messageText || isGenerating) return;
 
@@ -455,6 +477,7 @@
         }
 
         addMessage('user', messageText);
+        scrollToBottom(true); // Force scroll after user sends a message.
         if (inputMessage) {
             inputMessage.value = '';
             inputMessage.style.height = 'auto';
@@ -600,13 +623,11 @@
         }
     }
 
-    // This is the public function for the UI to call.
     function stopVoiceLoop() {
         if (!isFullVoiceModeActive) return;
         isFullVoiceModeActive = false;
     }
 
-    // This is the internal function that cleans everything up.
     function stopVoiceLoopInternal() {
         stopAllAudio();
         if(recognition) {
@@ -616,7 +637,7 @@
             currentAbortController.abort();
             currentAbortController = null;
         }
-        isGenerating = false; // Reset state
+        isGenerating = false;
     }
 
     function handleVoiceResult(event) {

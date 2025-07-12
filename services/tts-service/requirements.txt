@@ -2,4 +2,3 @@ Flask
 Flask-Cors
 piper-tts
 gunicorn
-gunicorn

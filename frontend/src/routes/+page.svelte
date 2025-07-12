@@ -43,10 +43,11 @@
             recognition.continuous = false;
             recognition.interimResults = false;
             recognition.onresult = handleVoiceResult;
+            // This robust onend handler acts as a safety net. It restarts listening
+            // if recognition stops for any reason (e.g., timeout from silence)
+            // as long as the app is not busy generating or speaking.
             recognition.onend = () => {
-                if (isFullVoiceModeActive && !currentAbortController) {
-                    startVoiceLoop();
-                }
+                checkAndRestartVoiceLoop();
             };
         }
 
@@ -65,10 +66,16 @@
             console.error("Failed to load initial settings:", error);
         }
 
-        // Add body-level click listener to unlock audio context
         document.body.addEventListener('click', unlockAudioContext, { once: true });
         document.body.addEventListener('touchend', unlockAudioContext, { once: true });
     });
+
+    // Reactive statement to manage the start and stop of voice mode
+    $: if (isFullVoiceModeActive) {
+        startVoiceLoop();
+    } else {
+        stopVoiceLoopInternal();
+    }
 
     function unlockAudioContext() {
         if (audioUnlocked) return;
@@ -170,16 +177,20 @@
     };
 
     const processAudioQueue = async () => {
-        if (isAudioPlaying || audioQueue.length === 0) return;
+        if (isAudioPlaying || audioQueue.length === 0) {
+            checkAndRestartVoiceLoop();
+            return;
+        }
 
         isAudioPlaying = true;
         const voiceStatusText = document.getElementById('voice-status-text');
-        if (isFullVoiceModeActive && voiceStatusText) voiceStatusText.textContent = 'Speaking...';
+        if (voiceStatusText) voiceStatusText.textContent = 'Speaking...';
+
         const sentence = audioQueue.shift();
 
         if (!sentence || !sentence.trim()) {
             isAudioPlaying = false;
-            processAudioQueue();
+            processAudioQueue(); // Process next item immediately
             return;
         }
 
@@ -202,18 +213,12 @@
             currentAudio.play();
             currentAudio.onended = () => {
                 isAudioPlaying = false;
-                if (audioQueue.length > 0) {
-                    processAudioQueue();
-                } else if (isFullVoiceModeActive) {
-                    startVoiceLoop();
-                }
+                processAudioQueue();
             };
         } catch (error) {
             console.error("TTS Error:", error);
             isAudioPlaying = false;
-            if (isFullVoiceModeActive) {
-                startVoiceLoop();
-            }
+            processAudioQueue();
         }
     };
 
@@ -411,12 +416,15 @@
         } finally {
             currentAbortController = null;
             isGenerating = false;
+            checkAndRestartVoiceLoop();
         }
     }
 
-    const sendMessage = async () => {
+    const sendMessage = async (message) => {
         unlockAudioContext();
-        const messageText = inputMessage.value.trim();
+        // PRIMARY FIX: Use the 'message' argument if it's a string (from voice),
+        // otherwise fall back to the input box value (from button/enter key).
+        const messageText = (typeof message === 'string' ? message : inputMessage.value).trim();
         if (!messageText || isGenerating) return;
 
         stopAllAudio();
@@ -447,8 +455,10 @@
         }
 
         addMessage('user', messageText);
-        inputMessage.value = '';
-        inputMessage.style.height = 'auto';
+        if (inputMessage) {
+            inputMessage.value = '';
+            inputMessage.style.height = 'auto';
+        }
 
         await sendMessageToServer(messageText, isNew);
     };
@@ -480,6 +490,7 @@
         } finally {
             currentAbortController = null;
             isGenerating = false;
+            checkAndRestartVoiceLoop();
         }
     };
 
@@ -495,7 +506,6 @@
             availableIcons = ['bot.svg', 'python.svg', 'story.svg', 'user.svg'];
             settingsOverlay.classList.remove('hidden');
             settingsModal.classList.remove('hidden');
-            // Dynamically create the prompt entries after modal is open
             setTimeout(rebuildPromptEditor, 0);
         } catch (error) {
             console.error("Failed to open settings:", error);
@@ -504,7 +514,7 @@
 
     const rebuildPromptEditor = () => {
         if (!promptListEditor) return;
-        promptListEditor.innerHTML = ''; // Clear existing
+        promptListEditor.innerHTML = '';
         (currentSettings.prompts || []).forEach(p => createPromptEditorEntry(p));
     }
 
@@ -571,27 +581,47 @@
         closeSettingsModal();
     };
 
-    function startVoiceLoop() {
-        if (!isFullVoiceModeActive) return;
-        const voiceStatusText = document.getElementById('voice-status-text');
-        if (voiceStatusText) voiceStatusText.textContent = 'Listening...';
-        try { recognition.start(); } catch (e) { console.log("STT could not be started."); }
+    function checkAndRestartVoiceLoop() {
+        if (isFullVoiceModeActive && !isGenerating && !isAudioPlaying && audioQueue.length === 0) {
+            startVoiceLoop();
+        }
     }
 
+    function startVoiceLoop() {
+        if (!isFullVoiceModeActive || isGenerating || isAudioPlaying) return;
+
+        const voiceStatusText = document.getElementById('voice-status-text');
+        if (voiceStatusText) voiceStatusText.textContent = 'Listening...';
+
+        try {
+            recognition.start();
+        } catch (e) {
+            console.log("STT could not be started, possibly already active.", e.name);
+        }
+    }
+
+    // This is the public function for the UI to call.
     function stopVoiceLoop() {
         if (!isFullVoiceModeActive) return;
         isFullVoiceModeActive = false;
+    }
+
+    // This is the internal function that cleans everything up.
+    function stopVoiceLoopInternal() {
         stopAllAudio();
-        try { recognition.stop(); } catch (e) { /* ignore */ }
+        if(recognition) {
+            try { recognition.stop(); } catch (e) { /* ignore */ }
+        }
         if (currentAbortController) {
             currentAbortController.abort();
             currentAbortController = null;
         }
+        isGenerating = false; // Reset state
     }
 
     function handleVoiceResult(event) {
         const transcript = event.results[event.results.length - 1][0].transcript.trim();
-        if (transcript) {
+        if (transcript && !isGenerating) {
             sendMessage(transcript);
         }
     }
@@ -621,7 +651,6 @@
     }
 
     function handleDeleteSession(e, sessionId) {
-        e.stopPropagation();
         if (confirm('Are you sure you want to delete this session?')) {
             fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
                 .then(() => {

@@ -1,4 +1,4 @@
 Flask
 Flask-Cors
-piper-tts
+piper-tts==1.2.0
 gunicorn

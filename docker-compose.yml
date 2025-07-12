@@ -1,3 +1,4 @@
+# docker-compose.yml
 services:
   ################################
   # API GATEWAY / REVERSE PROXY
@@ -13,14 +14,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./gateway/traefik.yml:/etc/traefik/traefik.yml:ro
-      # Optional: Add cert volume for real SSL
-      # - ./letsencrypt:/letsencrypt
+      - ./gateway/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - ./gateway/certs:/etc/traefik/certs:ro # Mount certificates
     networks:
       - localai_net
     labels:
       - "traefik.enable=true"
       # This makes the dashboard available at http://SERVER_IP:8080/dashboard
-      - "traefik.http.routers.dashboard.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/dashboard`)" # Changed
+      - "traefik.http.routers.dashboard.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/dashboard`)"
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.entrypoints=traefik"
 
@@ -37,9 +38,10 @@ services:
     labels:
       - "traefik.enable=true"
       # This makes the frontend the default route for all traffic
-      - "traefik.http.routers.frontend.rule=HostRegexp(`{host:.+}`)" # Changed
+      - "traefik.http.routers.frontend.rule=HostRegexp(`{host:.+}`)"
       - "traefik.http.routers.frontend.priority=1"
-      - "traefik.http.routers.frontend.entrypoints=http"
+      - "traefik.http.routers.frontend.entrypoints=https"
+      - "traefik.http.routers.frontend.tls=true"
       - "traefik.http.services.frontend-svc.loadbalancer.server.port=80"
 
   ################################
@@ -57,9 +59,10 @@ services:
     labels:
       - "traefik.enable=true"
       # Route requests like /api/sessions, /api/settings, etc.
-      - "traefik.http.routers.core-service.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/api/sessions`, `/api/settings`, `/api/icons`)" # Changed
+      - "traefik.http.routers.core-service.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/api/sessions`, `/api/settings`, `/api/icons`)"
       - "traefik.http.routers.core-service.priority=5"
-      - "traefik.http.routers.core-service.entrypoints=http"
+      - "traefik.http.routers.core-service.entrypoints=https"
+      - "traefik.http.routers.core-service.tls=true"
       - "traefik.http.services.core-svc.loadbalancer.server.port=8000"
 
   ################################
@@ -76,9 +79,10 @@ services:
       - CORE_SERVICE_URL=http://core-service:8000
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.chat-service.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/api/chat`)" # Changed
+      - "traefik.http.routers.chat-service.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/api/chat`)"
       - "traefik.http.routers.chat-service.priority=5"
-      - "traefik.http.routers.chat-service.entrypoints=http"
+      - "traefik.http.routers.chat-service.entrypoints=https"
+      - "traefik.http.routers.chat-service.tls=true"
       - "traefik.http.services.chat-svc.loadbalancer.server.port=8000"
 
   ################################
@@ -93,9 +97,10 @@ services:
       - localai_net
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.tts-service.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/api/tts`)" # Changed
+      - "traefik.http.routers.tts-service.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/api/tts`)"
       - "traefik.http.routers.tts-service.priority=10"
-      - "traefik.http.routers.tts-service.entrypoints=http"
+      - "traefik.http.routers.tts-service.entrypoints=https"
+      - "traefik.http.routers.tts-service.tls=true"
       - "traefik.http.services.tts-svc.loadbalancer.server.port=5001"
 
 networks:

@@ -108,7 +108,7 @@
         stopAllAudio();
 
         if (!text || !text.trim()) return;
-        const textToSynthesize = text.replace(/\*/g, '.');
+        const textToSynthesize = text;
         const originalButtonContent = '🔊';
 
         buttonElement.innerHTML = '...';
@@ -183,7 +183,7 @@
             return;
         }
 
-        const textToSynthesize = sentence.replace(/\*/g, '.');
+        const textToSynthesize = sentence;
 
         try {
             const ttsUrl = `/api/tts`;

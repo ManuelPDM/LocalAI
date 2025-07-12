@@ -1,0 +1,4 @@
+Flask
+Flask-Cors
+piper-tts==1.2.0
+gunicorn

@@ -1,14 +1,13 @@
-from flask import Flask, request, send_file, Response
+from flask import Flask, request, send_file
 from flask_cors import CORS
 from piper.voice import PiperVoice
 import io
 import logging
 import wave
 import os
-import sys
 
-# Set up detailed logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
+# Set up basic logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -18,9 +17,10 @@ CORS(app)
 MODEL_PATH = '/app/models/en_GB-semaine-medium/en_GB-semaine-medium.onnx'
 CONFIG_PATH = f"{MODEL_PATH}.json"
 
-logger.info("--- Piper TTS Server Initialization ---")
-logger.info(f"Model path: {MODEL_PATH}")
-logger.info(f"Config path: {CONFIG_PATH}")
+logging.info("--- Piper TTS Server Initialization ---")
+logging.info(f"Attempting to load Piper TTS model.")
+logging.info(f"Model path: {MODEL_PATH}")
+logging.info(f"Config path: {CONFIG_PATH}")
 
 voice = None
 
@@ -30,48 +30,43 @@ try:
     if not os.path.exists(CONFIG_PATH):
         raise FileNotFoundError(f"Config file not found at: {CONFIG_PATH}")
 
-    # --- START: THE FINAL FIX ---
-    # Explicitly specify the 'CPUExecutionProvider'. This forces ONNX Runtime to use its most
-    # stable, non-optimized code path and prevents it from auto-detecting CPU features
-    # that may be causing the silent failure in the virtualized environment.
-    logger.info("Attempting to load PiperVoice with explicit 'CPUExecutionProvider' to ensure VM compatibility.")
-    onnx_providers = ['CPUExecutionProvider']
-    voice = PiperVoice.load(MODEL_PATH, config_path=CONFIG_PATH, use_cuda=False, onnx_providers=onnx_providers)
-    # --- END: THE FINAL FIX ---
-
-    logger.info("PiperVoice.load() completed successfully.")
+    voice = PiperVoice.load(MODEL_PATH, config_path=CONFIG_PATH)
+    logging.info("Piper TTS model loaded successfully.")
 
 except Exception as e:
-    logger.exception("FATAL: An exception occurred during model loading.")
+    logger.exception("FATAL: Failed to load Piper TTS model. The TTS service will not be available.")
 
 
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
+    """
+    Receives text in a JSON payload and returns synthesized speech as a WAV file.
+    """
     if not voice:
-        logger.error("TTS request received, but model is not loaded.")
-        return Response("TTS model is not available.", status=503, mimetype='text/plain')
+        logging.error("TTS request received, but model is not loaded.")
+        return "TTS model is not available.", 503
 
     if not request.json or 'text' not in request.json:
-        return Response("No text provided.", status=400, mimetype='text/plain')
+        return "No text provided.", 400
 
     text_to_synthesize = request.json['text']
     if not text_to_synthesize.strip():
-        return Response("Text is empty.", status=400, mimetype='text/plain')
+        return "Text is empty.", 400
 
-    logger.info(f"Synthesizing text: '{text_to_synthesize[:50]}...'")
+    logging.info(f"Synthesizing text: '{text_to_synthesize[:50]}...'")
 
     try:
         audio_buffer = io.BytesIO()
         with wave.open(audio_buffer, 'wb') as wave_file:
-            wave_file.setnchannels(1)
-            wave_file.setsampwidth(2)
-            wave_file.setframerate(voice.config.sample_rate)
+            # CORRECTED: Let the library handle setting the WAV parameters.
+            # Do NOT set them manually here.
             voice.synthesize(text_to_synthesize, wave_file)
 
         audio_buffer.seek(0)
-        audio_bytes_len = len(audio_buffer.getvalue())
-        logger.info(f"Synthesis complete. Generated {audio_bytes_len} bytes.")
-        audio_buffer.seek(0)
+
+        # Log the size of the generated audio for confirmation.
+        logger.info(f"Synthesis complete. Generated {len(audio_buffer.getvalue())} bytes.")
+        audio_buffer.seek(0)  # Rewind for send_file
 
         return send_file(
             audio_buffer,
@@ -79,8 +74,8 @@ def text_to_speech():
             as_attachment=False
         )
     except Exception as e:
-        logger.exception("An exception occurred during the /api/tts request.")
-        return Response("Error during audio synthesis.", status=500, mimetype='text/plain')
+        logger.exception("Exception on /api/tts [POST]")
+        return "Error during audio synthesis.", 500
 
 
 if __name__ == '__main__':

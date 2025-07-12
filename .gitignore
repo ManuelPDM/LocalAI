@@ -9,7 +9,7 @@
 # ...but DO NOT ignore the example template.
 !/.env.example
 
-
+gateway/certs
 # --- Application Data ---
 # Ignore the SQLite database folder and any database files.
 data/
@@ -52,3 +52,5 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+docker-compose.override.yml

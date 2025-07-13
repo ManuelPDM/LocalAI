@@ -1,1030 +1,296 @@
+<!-- File: frontend/src/routes/+page.svelte (Final Version with Settings Button) -->
 <script>
     import { onMount } from 'svelte';
-    import { marked } from 'marked';
-    import hljs from 'highlight.js';
-    import 'highlight.js/styles/atom-one-dark.css';
 
-    // --- DOM Element Bindings ---
-    let chatBox;
-    let inputMessage;
-    let settingsModal;
-    let settingsOverlay;
-    let promptListEditor;
+    // --- State for the Interactive Calendar ---
+    let daysInMonth = [];
+    let selectedDay = null; // This will hold the data for the clicked day
 
-    // --- Svelte Reactive State ---
-    const AUTO_PLAY_KEY = 'autoPlayResponses';
-    let currentSessionId = null;
-    let currentAbortController = null;
-    let currentSettings = {};
-    let currentSessionInfo = { icon: 'bot.svg', ai_name: null };
-    let isFullVoiceModeActive = false;
-    let availableIcons = [];
-    let audioUnlocked = false;
-    let isNewChatMode = false;
-    let sessionList = [];
-    let isGenerating = false;
-    let showMobileMenu = false;
-    let autoPlayEnabled = false;
+    // Mock log entries for the demo
+    const MOCK_LOGS = [
+        "User Command: 'Turn on the living room lights.'",
+        "Tool Used: `smart-home-service`",
+        "Action: Set `light.living_room` to `ON`.",
+        "Task Complete.",
+        "User Command: 'What's the weather like?'",
+        "Tool Used: `web-search`",
+        "Action: Searched for 'weather in current location'.",
+        "Verbal Response: 'It's currently 18 degrees and sunny.'",
+        "User Command: 'Summarize the last email from John Doe.'",
+        "Tool Used: `email-assistant`",
+        "Tool Used: `rag-memory` to get context.",
+        "Verbal Response: 'John Doe's last email was a project update...'",
+        "Autonomous: Indexing new files from watched folder.",
+    ];
 
-    // --- Speech Recognition ---
-    const SpeechRecognition = typeof window !== 'undefined' ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
-    let recognition = null;
-    let isSttSupported = !!SpeechRecognition;
+    function openSettingsModal() {
+        // In a real implementation, this would open a settings modal component.
+        alert('AI Settings modal would open here. This is where you would configure the main system prompt, memory settings, etc.');
+    }
 
-    // --- TTS Streaming State ---
-    let audioQueue = [];
-    let isAudioPlaying = false;
-    let currentAudio = null;
-    const SENTENCE_BREAK_REGEX = /(?<=[.?!])\s|(?<=\n)|(?=\n\s*\*)/;
+    function generateCalendarData(year, month) {
+        const date = new Date(year, month, 1);
+        const firstDayOfMonth = date.getDay();
+        const daysInMonthCount = new Date(year, month + 1, 0).getDate();
 
-    onMount(async () => {
-        if (SpeechRecognition) {
-            recognition = new SpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.onresult = handleVoiceResult;
-            recognition.onend = () => {
-                checkAndRestartVoiceLoop();
-            };
+        let calendarDays = [];
+
+        for (let i = 0; i < firstDayOfMonth; i++) {
+            calendarDays.push({ date: null });
         }
 
-        if (localStorage.getItem('theme') === 'dark') {
-            document.body.classList.add('dark-mode');
+        for (let i = 1; i <= daysInMonthCount; i++) {
+            const activityLevel = Math.floor(Math.random() * 5);
+            const logCount = activityLevel > 0 ? Math.floor(Math.random() * activityLevel * 3) + 1 : 0;
+            let dayLogs = [];
+            for (let j = 0; j < logCount; j++) {
+                dayLogs.push(MOCK_LOGS[Math.floor(Math.random() * MOCK_LOGS.length)]);
+            }
+
+            calendarDays.push({
+                date: i,
+                activityLevel,
+                logs: dayLogs.sort()
+            });
         }
+        return calendarDays;
+    }
 
-        autoPlayEnabled = localStorage.getItem(AUTO_PLAY_KEY) === 'true';
-
-        try {
-            const response = await fetch('/api/settings');
-            currentSettings = await response.json();
-            applyIconSize(currentSettings.icon_size);
-            await loadSessions();
-        } catch (error) {
-            console.error("Failed to load initial settings:", error);
+    function selectDay(day) {
+        if (day && day.logs && day.logs.length > 0) {
+            selectedDay = day;
         }
+    }
 
-        document.body.addEventListener('click', unlockAudioContext, { once: true });
-        document.body.addEventListener('touchend', unlockAudioContext, { once: true });
+    function closeLogView() {
+        selectedDay = null;
+    }
+
+    onMount(() => {
+        const today = new Date();
+        daysInMonth = generateCalendarData(today.getFullYear(), today.getMonth());
     });
-
-    $: if (isFullVoiceModeActive) {
-        startVoiceLoop();
-    } else {
-        stopVoiceLoopInternal();
-    }
-
-    /**
-     * --- START: SCROLLING LOGIC ---
-     * Scrolls the chat box to the bottom.
-     * @param {boolean} force - If true, scrolls regardless of user's position.
-     * If false, only scrolls if the user is already near the bottom.
-     */
-    const scrollToBottom = (force = false) => {
-        if (!chatBox) return;
-
-        const scrollThreshold = 150; // A pixel value tolerance.
-        const isScrolledNearBottom = chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + scrollThreshold;
-
-        // We scroll if forced (e.g., after user sends a message) or if the user is already near the bottom.
-        if (force || isScrolledNearBottom) {
-            // Use timeout to wait for the Svelte DOM update to complete before scrolling.
-            setTimeout(() => {
-                if (chatBox) {
-                    chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
-                }
-            }, 50);
-        }
-    };
-    // --- END: SCROLLING LOGIC ---
-
-
-    function unlockAudioContext() {
-        if (audioUnlocked) return;
-        const silentWav = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-        const sound = new Audio(silentWav);
-        sound.play().then(() => {
-            audioUnlocked = true;
-            console.log("Audio context unlocked by user gesture.");
-        }).catch(e => {
-            console.warn("Audio context unlock failed. Will try again on next interaction.", e);
-        });
-    }
-
-    const stopAllAudio = () => {
-        if (currentAudio) {
-            currentAudio.onended = null;
-            currentAudio.pause();
-            currentAudio.src = '';
-            currentAudio = null;
-        }
-        audioQueue = [];
-        isAudioPlaying = false;
-        const playingBtns = document.querySelectorAll('.tts-msg-btn.playing');
-        playingBtns.forEach(btn => {
-            btn.classList.remove('playing');
-            btn.innerHTML = '🔊';
-            btn.disabled = false;
-        });
-    };
-
-    const playTextAsSpeech = async (text, buttonElement) => {
-        unlockAudioContext();
-        if (buttonElement.classList.contains('playing')) {
-            stopAllAudio();
-            return;
-        }
-        stopAllAudio();
-
-        if (!text || !text.trim()) return;
-        const textToSynthesize = text;
-        const originalButtonContent = '🔊';
-
-        buttonElement.innerHTML = '...';
-        buttonElement.disabled = true;
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-            controller.abort();
-            console.error("TTS request timed out.");
-        }, 10000);
-
-        try {
-            buttonElement.classList.add('playing');
-            const ttsUrl = `/api/tts`;
-            const response = await fetch(ttsUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    text: textToSynthesize.trim(),
-                    length_scale: currentSettings.length_scale || 1.0
-                }),
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-
-            if (!response.ok) throw new Error(`TTS server error: ${response.statusText}`);
-
-            const blob = await response.blob();
-            currentAudio = new Audio(URL.createObjectURL(blob));
-            isAudioPlaying = true;
-            currentAudio.play();
-            currentAudio.onended = () => {
-                isAudioPlaying = false;
-                currentAudio = null;
-                if (document.body.contains(buttonElement)) {
-                    buttonElement.classList.remove('playing');
-                    buttonElement.innerHTML = originalButtonContent;
-                    buttonElement.disabled = false;
-                }
-            };
-        } catch (error) {
-            clearTimeout(timeoutId);
-            console.error("Single TTS Error:", error);
-            isAudioPlaying = false;
-            if (document.body.contains(buttonElement)) {
-                buttonElement.innerHTML = '⚠️';
-                setTimeout(() => {
-                    if (document.body.contains(buttonElement)) {
-                        buttonElement.innerHTML = originalButtonContent;
-                    }
-                }, 2000);
-            }
-        } finally {
-            if (document.body.contains(buttonElement) && !isAudioPlaying) {
-                buttonElement.classList.remove('playing');
-                buttonElement.disabled = false;
-            }
-        }
-    };
-
-    const processAudioQueue = async () => {
-        if (isAudioPlaying || audioQueue.length === 0) {
-            checkAndRestartVoiceLoop();
-            return;
-        }
-
-        isAudioPlaying = true;
-        const voiceStatusText = document.getElementById('voice-status-text');
-        if (voiceStatusText) voiceStatusText.textContent = 'Speaking...';
-
-        const sentence = audioQueue.shift();
-
-        if (!sentence || !sentence.trim()) {
-            isAudioPlaying = false;
-            processAudioQueue();
-            return;
-        }
-
-        const textToSynthesize = sentence;
-
-        try {
-            const ttsUrl = `/api/tts`;
-            const response = await fetch(ttsUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    text: textToSynthesize.trim(),
-                    length_scale: currentSettings.length_scale || 1.0
-                })
-            });
-            if (!response.ok) throw new Error(`TTS server error: ${response.statusText}`);
-
-            const blob = await response.blob();
-            currentAudio = new Audio(URL.createObjectURL(blob));
-            currentAudio.play();
-            currentAudio.onended = () => {
-                isAudioPlaying = false;
-                processAudioQueue();
-            };
-        } catch (error) {
-            console.error("TTS Error:", error);
-            isAudioPlaying = false;
-            processAudioQueue();
-        }
-    };
-
-    let messages = [];
-
-    function addMessage(role, text, isStreaming = false) {
-        const lastMessage = messages[messages.length - 1];
-        if (isStreaming && lastMessage && lastMessage.role === role) {
-            lastMessage.text += text;
-            messages = messages;
-        } else {
-            const newMessage = {
-                id: Date.now() + Math.random(),
-                role,
-                text,
-                sender: role === 'assistant' ? (currentSessionInfo.ai_name || 'Assistant') : 'User',
-                avatar: role === 'assistant' ? `/icons/${currentSessionInfo.icon || 'bot.svg'}` : '/icons/user.svg'
-            };
-            messages = [...messages, newMessage];
-        }
-        // Removed old scrolling logic from here. The new `scrollToBottom` function handles it better.
-    }
-
-    function finalizeMessage(messageId) {
-        const messageDiv = document.querySelector(`.message[data-id="${messageId}"] .message-content`);
-        if (!messageDiv) return;
-
-        const message = messages.find(m => m.id == messageId);
-        if (!message) return;
-
-        messageDiv.innerHTML = marked.parse(message.text || '');
-        messageDiv.querySelectorAll('pre code').forEach(hljs.highlightElement);
-
-        messageDiv.querySelectorAll('pre').forEach(pre => {
-            if (pre.querySelector('.copy-btn')) return;
-            const copyBtn = document.createElement('button');
-            copyBtn.className = 'copy-btn';
-            copyBtn.innerText = 'Copy';
-            copyBtn.onclick = () => {
-                navigator.clipboard.writeText(pre.querySelector('code').innerText).then(() => {
-                    copyBtn.innerText = 'Copied!';
-                    setTimeout(() => copyBtn.innerText = 'Copy', 2000);
-                });
-            };
-            pre.appendChild(copyBtn);
-        });
-    }
-
-    const updateActionButtons = (messageId) => {
-        setTimeout(() => {
-            const messageEl = document.querySelector(`.message[data-id="${messageId}"]`);
-            if (messageEl) {
-                const buttons = messageEl.querySelectorAll('.message-actions button');
-                buttons.forEach(btn => btn.classList.remove('hidden'));
-            }
-        }, 10);
-    };
-
-    const handleStream = async (response, onFinally) => {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        const useVoice = autoPlayEnabled || isFullVoiceModeActive;
-
-        const newMessage = {
-            id: Date.now() + Math.random(),
-            role: 'assistant',
-            text: '',
-            sender: currentSessionInfo.ai_name || 'Assistant',
-            avatar: `/icons/${currentSessionInfo.icon || 'bot.svg'}`
-        };
-        messages = [...messages, newMessage];
-        scrollToBottom(); // Scroll to the new empty message bubble.
-
-        let sentenceBuffer = "";
-
-        while (true) {
-            if (currentAbortController && currentAbortController.signal.aborted) break;
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            newMessage.text += chunk;
-            messages = messages;
-            scrollToBottom(); // Scroll with each new chunk of text.
-
-            if (useVoice) {
-                sentenceBuffer += chunk;
-                const sentences = sentenceBuffer.split(SENTENCE_BREAK_REGEX);
-                if (sentences.length > 1) {
-                    sentenceBuffer = sentences.pop();
-                    for (const sentence of sentences) {
-                        if (sentence.trim()) {
-                            audioQueue.push(sentence);
-                            if (!isAudioPlaying) processAudioQueue();
-                        }
-                    }
-                }
-            }
-        }
-        if (currentAbortController && !currentAbortController.signal.aborted && useVoice && sentenceBuffer.trim()) {
-            audioQueue.push(sentenceBuffer);
-            if (!isAudioPlaying) processAudioQueue();
-        }
-        finalizeMessage(newMessage.id);
-        onFinally(newMessage.id);
-    };
-
-    const loadSessions = async () => {
-        try {
-            const response = await fetch('/api/sessions');
-            sessionList = await response.json();
-
-            if (sessionList.length > 0 && !currentSessionId) {
-                await loadSession(sessionList[0].id);
-            } else if (sessionList.length === 0) {
-                await enterNewChatMode();
-            }
-        } catch (error) {
-            console.error("Failed to load sessions:", error);
-        }
-    };
-
-    const loadSession = async (sessionId) => {
-        if (currentAbortController) currentAbortController.abort();
-        stopAllAudio();
-        isNewChatMode = false;
-
-        try {
-            const response = await fetch(`/api/sessions/${sessionId}`);
-            if (!response.ok) { currentSessionId = null; await loadSessions(); return; }
-            const sessionData = await response.json();
-
-            currentSessionInfo = { icon: sessionData.icon, ai_name: sessionData.ai_name };
-            messages = sessionData.messages
-                .filter(msg => msg.role !== 'system')
-                .map(msg => ({
-                    id: Math.random(),
-                    ...msg,
-                    text: msg.content,
-                    sender: msg.role === 'assistant' ? (sessionData.ai_name || 'Assistant') : 'User',
-                    avatar: msg.role === 'assistant' ? `/icons/${sessionData.icon || 'bot.svg'}` : '/icons/user.svg'
-                }));
-
-            currentSessionId = sessionId;
-            setTimeout(() => {
-                messages.forEach(msg => finalizeMessage(msg.id));
-                updateActionButtons(messages[messages.length - 1]?.id);
-                scrollToBottom(true); // Force scroll after loading a session.
-            }, 50);
-
-        } catch (error) {
-            console.error(`Failed to load session ${sessionId}:`, error);
-        }
-    };
-
-    const enterNewChatMode = async () => {
-        if (currentAbortController) currentAbortController.abort();
-        stopAllAudio();
-        messages = [];
-        currentSessionId = null;
-        isNewChatMode = true;
-
-        const defaultPrompt = currentSettings.prompts ? currentSettings.prompts[0] : {};
-        currentSessionInfo = {
-            icon: defaultPrompt?.icon || 'bot.svg',
-            ai_name: defaultPrompt?.ai_name || null
-        };
-        if (inputMessage) inputMessage.focus();
-    };
-
-    async function sendMessageToServer(messageText, isNew) {
-        currentAbortController = new AbortController();
-        isGenerating = true;
-        try {
-            const voiceStatusText = document.getElementById('voice-status-text');
-            if (isFullVoiceModeActive && voiceStatusText) voiceStatusText.textContent = 'Thinking...';
-
-            const response = await fetch(`/api/chat/${currentSessionId}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: messageText }),
-                signal: currentAbortController.signal
-            });
-
-            if (!response.ok) throw new Error("Failed to get response from server.");
-
-            await handleStream(response, (newMessageId) => {
-                updateActionButtons(newMessageId);
-                if (isNew) loadSessions();
-            });
-        } catch (error) {
-            if (error.name !== 'AbortError') {
-                console.error('Fetch error:', error);
-                addMessage('assistant', `Error: ${error.message}`);
-            } else {
-                console.log("Stream aborted by user.");
-            }
-        } finally {
-            currentAbortController = null;
-            isGenerating = false;
-            checkAndRestartVoiceLoop();
-        }
-    }
-
-    const sendMessage = async (message) => {
-        unlockAudioContext();
-        const messageText = (typeof message === 'string' ? message : inputMessage.value).trim();
-        if (!messageText || isGenerating) return;
-
-        stopAllAudio();
-
-        let isNew = !currentSessionId;
-        if (isNew) {
-            isNewChatMode = false;
-            try {
-                const promptDropdown = document.getElementById('prompt-select-dropdown');
-                const selectedPrompt = promptDropdown ? promptDropdown.value : (currentSettings.prompts[0]?.prompt || '');
-                const response = await fetch('/api/sessions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: selectedPrompt })
-                });
-                const newSessionData = await response.json();
-                currentSessionId = newSessionData.id;
-
-                const promptInfo = (currentSettings.prompts || []).find(p => p.prompt === selectedPrompt);
-                if (promptInfo) {
-                    currentSessionInfo = { icon: promptInfo.icon, ai_name: promptInfo.ai_name };
-                }
-            } catch (error) {
-                console.error("Failed to create new session:", error);
-                addMessage('assistant', 'Error: Could not create a new session.');
-                return;
-            }
-        }
-
-        addMessage('user', messageText);
-        scrollToBottom(true); // Force scroll after user sends a message.
-        if (inputMessage) {
-            inputMessage.value = '';
-            inputMessage.style.height = 'auto';
-        }
-
-        await sendMessageToServer(messageText, isNew);
-    };
-
-    const regenerateMessage = async (messageDiv) => {
-        if (!currentSessionId || isGenerating) return;
-        stopAllAudio();
-
-        const messageId = messageDiv.dataset.id;
-        messages = messages.filter(m => m.id != messageId);
-
-        isGenerating = true;
-        currentAbortController = new AbortController();
-
-        try {
-            const response = await fetch(`/api/chat/${currentSessionId}/regenerate`, {
-                method: 'POST',
-                signal: currentAbortController.signal
-            });
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Failed to regenerate: ${errorText}`);
-            }
-            await handleStream(response, (newMessageId) => updateActionButtons(newMessageId));
-        } catch (error) {
-            if (error.name !== 'AbortError') {
-                addMessage('assistant', `<p style="color:red;">Error: ${error.message}</p>`);
-            }
-        } finally {
-            currentAbortController = null;
-            isGenerating = false;
-            checkAndRestartVoiceLoop();
-        }
-    };
-
-    function applyIconSize(size) {
-        document.body.classList.remove('icon-size-small', 'icon-size-medium', 'icon-size-large', 'icon-size-xl');
-        document.body.classList.add(`icon-size-${size || 'medium'}`);
-    }
-
-    const openSettingsModal = async () => {
-        try {
-            const settingsResp = await fetch('/api/settings');
-            currentSettings = await settingsResp.json();
-            availableIcons = ['bot.svg', 'python.svg', 'story.svg', 'user.svg'];
-            settingsOverlay.classList.remove('hidden');
-            settingsModal.classList.remove('hidden');
-            setTimeout(rebuildPromptEditor, 0);
-        } catch (error) {
-            console.error("Failed to open settings:", error);
-        }
-    };
-
-    const rebuildPromptEditor = () => {
-        if (!promptListEditor) return;
-        promptListEditor.innerHTML = '';
-        (currentSettings.prompts || []).forEach(p => createPromptEditorEntry(p));
-    }
-
-    const createPromptEditorEntry = (p = {}) => {
-        if (!promptListEditor) return;
-
-        const div = document.createElement('div');
-        div.className = 'prompt-editor-entry';
-        const iconOptions = availableIcons.map(icon => `<option value="${icon}" ${p.icon === icon ? 'selected' : ''}>${icon}</option>`).join('');
-        div.innerHTML = `
-            <div class="prompt-title-wrapper">
-                <label>Persona Title</label>
-                <input type="text" value="${p.title || ''}" class="prompt-title" placeholder="e.g., Python Expert">
-            </div>
-            <div class="prompt-name-wrapper">
-                <label>AI Name (Optional)</label>
-                <input type="text" value="${p.ai_name || ''}" class="prompt-ai-name" placeholder="e.g., CoderBot">
-            </div>
-            <button type="button" class="remove-prompt-btn" title="Remove Persona">X</button>
-            <div class="prompt-icon-wrapper">
-                 <label>Icon</label>
-                 <select class="prompt-icon">${iconOptions}</select>
-            </div>
-            <textarea class="prompt-text" placeholder="System prompt content...">${p.prompt || ''}</textarea>
-        `;
-        promptListEditor.appendChild(div);
-        div.querySelector('.remove-prompt-btn').addEventListener('click', () => div.remove());
-    }
-
-    const closeSettingsModal = () => {
-        settingsOverlay.classList.add('hidden');
-        settingsModal.classList.add('hidden');
-    };
-
-    const saveSettings = async (event) => {
-        const newSettings = {
-            lm_studio_url: document.getElementById('setting-url').value,
-            icon_size: document.getElementById('setting-icon-size').value,
-            length_scale: parseFloat(document.getElementById('setting-speed').value),
-            context_limit: parseInt(document.getElementById('setting-context').value),
-            prompts: []
-        };
-
-        promptListEditor.querySelectorAll('.prompt-editor-entry').forEach(div => {
-            const title = div.querySelector('.prompt-title').value.trim();
-            const prompt = div.querySelector('.prompt-text').value.trim();
-            if (title && prompt) {
-                newSettings.prompts.push({
-                    title,
-                    prompt,
-                    icon: div.querySelector('.prompt-icon').value,
-                    ai_name: div.querySelector('.prompt-ai-name').value.trim() || null
-                });
-            }
-        });
-
-        await fetch('/api/settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newSettings)
-        });
-        currentSettings = newSettings;
-        applyIconSize(currentSettings.icon_size);
-        closeSettingsModal();
-    };
-
-    function checkAndRestartVoiceLoop() {
-        if (isFullVoiceModeActive && !isGenerating && !isAudioPlaying && audioQueue.length === 0) {
-            startVoiceLoop();
-        }
-    }
-
-    function startVoiceLoop() {
-        if (!isFullVoiceModeActive || isGenerating || isAudioPlaying) return;
-
-        const voiceStatusText = document.getElementById('voice-status-text');
-        if (voiceStatusText) voiceStatusText.textContent = 'Listening...';
-
-        try {
-            recognition.start();
-        } catch (e) {
-            console.log("STT could not be started, possibly already active.", e.name);
-        }
-    }
-
-    function stopVoiceLoop() {
-        if (!isFullVoiceModeActive) return;
-        isFullVoiceModeActive = false;
-    }
-
-    function stopVoiceLoopInternal() {
-        stopAllAudio();
-        if(recognition) {
-            try { recognition.stop(); } catch (e) { /* ignore */ }
-        }
-        if (currentAbortController) {
-            currentAbortController.abort();
-            currentAbortController = null;
-        }
-        isGenerating = false;
-    }
-
-    function handleVoiceResult(event) {
-        const transcript = event.results[event.results.length - 1][0].transcript.trim();
-        if (transcript && !isGenerating) {
-            sendMessage(transcript);
-        }
-    }
-
-    function handleSessionClick(sessionId) {
-        if (sessionId !== currentSessionId) {
-            loadSession(sessionId);
-        }
-        if (window.innerWidth <= 768) {
-            showMobileMenu = false;
-        }
-    }
-
-    function handleRenameSession(e, sessionId) {
-        e.stopPropagation();
-        const currentTitle = sessionList.find(s => s.id === sessionId)?.title || '';
-        const newTitle = prompt('Enter new title:', currentTitle);
-        if (newTitle && newTitle.trim()) {
-            fetch(`/api/sessions/${sessionId}/rename`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: newTitle })
-            }).then(() => {
-                sessionList = sessionList.map(s => s.id === sessionId ? { ...s, title: newTitle } : s);
-            });
-        }
-    }
-
-    function handleDeleteSession(e, sessionId) {
-        if (confirm('Are you sure you want to delete this session?')) {
-            fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
-                .then(() => {
-                    sessionList = sessionList.filter(s => s.id !== sessionId);
-                    if (currentSessionId === sessionId) {
-                        currentSessionId = null;
-                        enterNewChatMode();
-                    }
-                });
-        }
-    }
-
-    function handleNewChatClick() {
-        enterNewChatMode();
-        if (window.innerWidth <= 768) {
-            showMobileMenu = false;
-        }
-    }
-
-    function toggleDarkMode() {
-        document.body.classList.toggle('dark-mode');
-        localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
-    }
-
 </script>
 
-<button id="menu-toggle-btn" on:click={() => showMobileMenu = !showMobileMenu}>☰</button>
+<!-- Log Viewer Modal -->
+{#if selectedDay}
+<div class="modal-overlay" on:click={closeLogView} role="button" tabindex="0" on:keydown={(e) => {if(e.key === 'Escape') closeLogView()}}>
+    <div class="log-viewer-modal" on:click|stopPropagation>
+        <header class="modal-header">
+            <h3>Activity for: October {selectedDay.date}, 2023</h3>
+            <button on:click={closeLogView} title="Close">×</button>
+        </header>
+        <ul class="log-list">
+            {#each selectedDay.logs as log}
+                <li>{log}</li>
+            {:else}
+                <li>No activity recorded for this day.</li>
+            {/each}
+        </ul>
+    </div>
+</div>
+{/if}
 
-<div id="mobile-overlay" class:active={showMobileMenu} on:click={() => showMobileMenu = false} role="button" tabindex="0" on:keydown={(e) => {if(e.key==='Enter') showMobileMenu = false}}></div>
+<div class="dashboard-container">
+    <header class="dashboard-header">
+        <h1>AI Command Center</h1>
+        <button class="settings-button" title="AI Settings" on:click={openSettingsModal}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+    </header>
 
-<div class="sidebar" class:open={showMobileMenu}>
-    <div class="sidebar-header"><button id="new-chat-btn" on:click={handleNewChatClick}>➕ New Chat</button></div>
-    <ul id="session-list">
-        {#each sessionList as session (session.id)}
-            <li>
-                <button class="session-button" on:click={() => handleSessionClick(session.id)} class:active={session.id === currentSessionId}>
-                    <img src={`/icons/${session.icon || 'bot.svg'}`} alt="session icon" class="session-icon">
-                    <span class="session-title">{session.title}</span>
-                </button>
-                <div class="session-buttons">
-                    <button class="rename-session-btn" title="Rename" on:click={(e) => handleRenameSession(e, session.id)}>✏️</button>
-                    <button class="delete-session-btn" title="Delete" on:click={(e) => handleDeleteSession(e, session.id)}>🗑️</button>
+    <main class="dashboard-grid">
+        <!-- Widget 1: Command & Live Activity -->
+        <div class="widget command-widget">
+            <h3>Command & Status</h3>
+            <div class="command-actions">
+                <button class="command-button voice"><span>Voice Command</span></button>
+                <button class="command-button text"><span>Type Command</span></button>
+            </div>
+            <div class="live-activity-feed">
+                <ul class="status-list">
+                    <li class="status-item idle">Awaiting command...</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Widget 2: Tool Usage Chart -->
+        <div class="widget tool-usage-widget">
+            <h3>Tool Usage (Last 7 Days)</h3>
+            <div class="chart bar-chart">
+                <ul>
+                    <li style="--bar-value: 85%; --bar-color: #3b82f6;"><span>Smart Home</span></li>
+                    <li style="--bar-value: 70%; --bar-color: #8b5cf6;"><span>Memory (RAG)</span></li>
+                    <li style="--bar-value: 50%; --bar-color: #10b981;"><span>Communications</span></li>
+                    <li style="--bar-value: 25%; --bar-color: #ec4899;"><span>Image Generation</span></li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Widget 3: Interactive Activity Calendar -->
+        <div class="widget activity-widget">
+            <div class="activity-header">
+                <h3>Activity History</h3>
+                <div class="calendar-nav">
+                    <button>‹</button>
+                    <span>October 2023</span>
+                    <button>›</button>
                 </div>
-            </li>
-        {/each}
-    </ul>
-    <div class="sidebar-footer">
-        <div class="footer-action">
-            <button id="full-voice-mode-btn" style="width:100%;" on:click={() => isFullVoiceModeActive = !isFullVoiceModeActive} disabled={!isSttSupported}>
-                {#if isFullVoiceModeActive}⏹️ Stop Voice Chat{:else if !isSttSupported}⛔ Voice Not Supported{:else}🎙️ Start Voice Chat{/if}
+            </div>
+            <div class="calendar-grid">
+                <div class="day-name">Sun</div><div class="day-name">Mon</div><div class="day-name">Tue</div><div class="day-name">Wed</div><div class="day-name">Thu</div><div class="day-name">Fri</div><div class="day-name">Sat</div>
+
+                {#each daysInMonth as day}
+                    {#if day.date}
+                        <button
+                            class="day-cell"
+                            style="--activity-level: {day.activityLevel};"
+                            on:click={() => selectDay(day)}
+                            disabled={day.activityLevel === 0}
+                            title="{day.logs.length} activities"
+                        >
+                            {day.date}
+                        </button>
+                    {:else}
+                        <div class="day-cell empty"></div>
+                    {/if}
+                {/each}
+            </div>
+        </div>
+
+        <!-- Widget 4: Tool Palette -->
+        <div class="widget tool-palette-widget">
+            <h3>Key Tools</h3>
+            <div class="tool-palette-grid">
+                <div class="tool-item online"><span>💡</span>Smart Home</div>
+                <div class="tool-item online"><span>🧠</span>Memory (RAG)</div>
+                <div class="tool-item online"><span>📱</span>Comms</div>
+                <div class="tool-item online"><span>🎨</span>Image Gen</div>
+            </div>
+            <button class="view-all-button">
+                View All Tools →
             </button>
         </div>
-        <div class="footer-action">
-            <label for="voice-chat-toggle">🔊 Auto-Play Responses</label>
-            <input type="checkbox" id="voice-chat-toggle" title="Toggle automatic voice playback for new messages" bind:checked={autoPlayEnabled} on:change={() => localStorage.setItem(AUTO_PLAY_KEY, autoPlayEnabled)}>
-        </div>
-        <div class="footer-action">
-            <label for="settings-btn">⚙️ Settings</label>
-            <button id="settings-btn" on:click={openSettingsModal}>Open</button>
-        </div>
-        <div class="footer-action">
-            <label for="dark-mode-btn">🌙 Dark Mode</label>
-            <button id="dark-mode-btn" on:click={toggleDarkMode}>Toggle</button>
-        </div>
-    </div>
+    </main>
 </div>
-
-<div class="chat-container">
-    <div id="new-chat-prompt-selector" class:hidden={!isNewChatMode}>
-        <label for="prompt-select-dropdown">Choose a Persona:</label>
-        <select id="prompt-select-dropdown">
-            {#if currentSettings.prompts}
-                {#each currentSettings.prompts as p}
-                    <option value={p.prompt}>{p.title}</option>
-                {/each}
-            {/if}
-        </select>
-    </div>
-
-    <div id="chat-box" bind:this={chatBox}>
-        {#each messages as msg (msg.id)}
-            <div class="message {msg.role}" data-id={msg.id}>
-                {#if msg.role === 'user' || msg.role === 'assistant'}
-                    <img src={msg.avatar} alt="{msg.role} avatar" class="avatar" />
-                    <div class="message-container">
-                        {#if msg.role === 'assistant' && currentSessionInfo.ai_name}
-                            <div class="message-sender">{currentSessionInfo.ai_name}</div>
-                        {/if}
-                        <div class="message-content">{@html msg.text ? marked.parse(msg.text) : ''}</div>
-                        {#if msg.role === 'assistant'}
-                            <div class="message-actions">
-                                <button class="tts-msg-btn hidden" title="Read Aloud" on:click={(e) => playTextAsSpeech(msg.text, e.currentTarget)}>🔊</button>
-                                <button class="regenerate-btn hidden" title="Regenerate" on:click={(e) => regenerateMessage(e.currentTarget.closest('.message'))}>🔄</button>
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
-            </div>
-        {/each}
-    </div>
-
-    <div class="input-area">
-        <button id="mic-btn" title="Start Speech to Text" on:click={() => recognition?.start()} disabled={!isSttSupported}>🎤</button>
-        <textarea id="input-message" placeholder="Type your message here..." rows="1" bind:this={inputMessage} on:keypress={(e) => {if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }}}></textarea>
-        {#if isGenerating}
-            <button id="cancel-btn" title="Cancel Generation" on:click={() => currentAbortController?.abort()}>⏹️</button>
-        {:else}
-            <button id="send-btn" title="Send Message" on:click={sendMessage}>➤</button>
-        {/if}
-    </div>
-</div>
-
-<div id="full-voice-overlay" class:hidden={!isFullVoiceModeActive} on:click={stopVoiceLoop} role="button" tabindex="0" on:keydown={(e) => {if(e.key==='Enter') stopVoiceLoop()}}>
-    <div id="pulsing-circle"></div>
-    <p id="voice-status-text">Starting...</p>
-</div>
-
-<div id="settings-overlay" class:hidden={true} on:click={(e) => {if(e.target === settingsOverlay) closeSettingsModal()}} bind:this={settingsOverlay} role="button" tabindex="0" on:keydown={(e) => {if(e.key==='Enter') closeSettingsModal()}}></div>
-
-<div id="settings-modal" class:hidden={true} bind:this={settingsModal}>
-    <form id="settings-form" on:submit|preventDefault={saveSettings}>
-        <h2>Settings</h2>
-        <fieldset>
-            <legend>API Configuration</legend>
-            <label for="setting-url">LM Studio URL</label>
-            <input type="text" id="setting-url" name="lm_studio_url" required placeholder="e.g., http://localhost:1234/v1/chat/completions" value={currentSettings.lm_studio_url || ''}>
-        </fieldset>
-        <fieldset>
-            <legend>Appearance</legend>
-            <label for="setting-icon-size">Icon Size</label>
-            <select id="setting-icon-size" name="icon_size" bind:value={currentSettings.icon_size}>
-                <option value="small">Small</option>
-                <option value="medium">Medium</option>
-                <option value="large">Large</option>
-                <option value="xl">XL</option>
-            </select>
-        </fieldset>
-        <fieldset>
-            <legend>TTS Configuration</legend>
-            <label for="setting-speed">Speech Speed (0.5=fast, 1=normal, 1.5=slow)</label>
-            <input type="number" id="setting-speed" name="length_scale" step="0.1" min="0.5" max="2.0" required bind:value={currentSettings.length_scale}>
-        </fieldset>
-        <fieldset>
-            <legend>Context Management</legend>
-            <label for="setting-context">Context Limit (Tokens)</label>
-            <input type="number" id="setting-context" name="context_limit" step="1" required bind:value={currentSettings.context_limit}>
-        </fieldset>
-        <fieldset>
-            <legend>System Prompts / Personas</legend>
-            <div id="prompt-list-editor" bind:this={promptListEditor}></div>
-            <button type="button" id="add-prompt-btn" on:click={() => createPromptEditorEntry()}>Add New Persona</button>
-        </fieldset>
-        <div class="modal-buttons">
-            <button type="button" id="settings-cancel-btn" on:click={closeSettingsModal}>Cancel</button>
-            <button type="submit" id="settings-save-btn">Save All Settings</button>
-        </div>
-    </form>
-</div>
-
 
 <style>
-    /* Paste your ENTIRE <style> block from index.html here */
-    :root {
-        --bg-color: #ffffff; --text-color: #212529; --border-color: #dee2e6;
-        --sidebar-bg: #f8f9fa; --sidebar-hover-bg: #e9ecef; --sidebar-active-bg: #dde4eb;
-        --input-bg: #ffffff; --input-border: #ced4da;
-        --user-msg-bg: #e6f3ff; --ai-msg-bg: #f1f3f5; --system-msg-bg: #fffbe6;
-        --button-bg: #007bff; --button-text: #ffffff; --button-hover-bg: #0056b3;
-        --danger-button-bg: #dc3545; --danger-button-hover-bg: #c82333;
+    /* Main container and layout */
+    .dashboard-container {
+        display: flex; flex-direction: column; height: 100%; width: 100%;
+        background-color: #111827; color: #e5e7eb;
+        padding: 1.5rem 2rem; gap: 1.5rem;
     }
-    :global(body.dark-mode) {
-        --bg-color: #212529; --text-color: #f8f9fa; --border-color: #495057;
-        --sidebar-bg: #343a40; --sidebar-hover-bg: #495057; --sidebar-active-bg: #5a6268;
-        --input-bg: #495057; --input-border: #6c757d;
-        --user-msg-bg: #004a99; --ai-msg-bg: #343a40; --system-msg-bg: #533519;
-        --button-bg: #0d6efd; --button-text: #ffffff; --button-hover-bg: #0b5ed7;
+
+    .dashboard-header { display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+    .dashboard-header h1 { margin: 0; font-size: 1.75rem; font-weight: 600; }
+    .settings-button { background: transparent; border: none; color: #9ca3af; cursor: pointer; padding: 0.5rem; border-radius: 50%; transition: all 0.2s ease; }
+    .settings-button:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+
+    /* Grid Layout for Widgets */
+    .dashboard-grid { flex-grow: 1; display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); gap: 1.5rem; }
+
+    /* Glassmorphism Widget Styling */
+    .widget {
+        background: rgba(31, 41, 55, 0.5); backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px; padding: 1.5rem;
+        display: flex; flex-direction: column;
     }
-    :global(html) {
-        height: 100%;
+    .widget h3 { margin: 0 0 1.5rem 0; font-size: 1rem; font-weight: 500; color: #d1d5db; }
+
+    /* Command Widget */
+    .command-widget { grid-area: 1 / 1 / 2 / 2; }
+    .command-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+    .command-button {
+        display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+        font-size: 1rem; font-weight: 500; padding: 1rem; border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2); cursor: pointer;
+        transition: all 0.2s ease; background: rgba(255, 255, 255, 0.05); color: #e5e7eb;
     }
-    :global(body) {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        margin: 0;
-        background-color: var(--bg-color);
-        color: var(--text-color);
-        display: flex;
-        height: 100%;
-        overflow: hidden;
+    .command-button:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.3); }
+    .live-activity-feed { flex-grow: 1; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 1rem; }
+    .status-list { list-style: none; padding: 0; margin: 0; font-family: 'Menlo', monospace; font-size: 0.85rem; }
+    .status-item.idle::before { content: '●'; color: #4ade80; margin-right: 0.5rem; animation: pulse 2s infinite; }
+
+    /* Tool Usage Widget */
+    .tool-usage-widget { grid-area: 1 / 2 / 2 / 3; }
+    .bar-chart { flex-grow: 1; display: flex; flex-direction: column; justify-content: space-around; }
+    .bar-chart ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 1rem; }
+    .bar-chart li { display: grid; grid-template-columns: 1fr 2fr; align-items: center; gap: 1rem; }
+    .bar-chart li::after { content: ''; height: 1.5rem; width: var(--bar-value); background: var(--bar-color); border-radius: 4px; box-shadow: 0 0 12px 0 var(--bar-color); }
+    .bar-chart span { font-size: 0.9rem; font-weight: 500; }
+
+    /* INTERACTIVE Activity Calendar Widget */
+    .activity-widget { grid-area: 2 / 1 / 3 / 2; gap: 1rem; }
+    .activity-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0 !important; }
+    .activity-header h3 { margin-bottom: 0 !important; }
+    .calendar-nav { display: flex; align-items: center; gap: 0.5rem; }
+    .calendar-nav span { font-size: 0.9rem; font-weight: 500; }
+    .calendar-nav button { background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 1.5rem; }
+    .calendar-grid { flex-grow: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: auto repeat(6, 1fr); gap: 5px; }
+    .day-name { font-size: 0.75rem; text-align: center; color: #9ca3af; }
+    .day-cell {
+        background: rgba(255, 255, 255, 0.05); border-radius: 4px;
+        border: 1px solid transparent;
+        color: #d1d5db; font-size: 0.8rem;
+        display: flex; align-items: center; justify-content: center;
+        transition: all 0.2s ease;
     }
-    .sidebar { width: 260px; background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; transition: background-color 0.3s, border-color 0.3s; }
-    .sidebar-header { padding: 1rem; border-bottom: 1px solid var(--border-color); }
-    #new-chat-btn { width: 100%; padding: 0.75rem; font-size: 1rem; background-color: var(--button-bg); color: var(--button-text); border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.2s; }
-    #session-list { list-style: none; padding: 0.5rem; margin: 0; overflow-y: auto; flex-grow: 1; }
-    #session-list li { padding: 0; margin-bottom: 0.25rem; display: flex; justify-content: space-between; align-items: center; border-radius: 5px; }
-    button.session-button { background: transparent; border: none; width: 100%; padding: 0.75rem 1rem; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; text-align: left; color: var(--text-color); }
-    .session-icon { flex-shrink: 0; }
-    .session-title { flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #session-list li:hover { background-color: var(--sidebar-hover-bg); }
-    button.session-button.active { background-color: var(--sidebar-active-bg); font-weight: bold; }
-    .session-buttons { display: flex; align-items: center; padding-right: 0.5rem; }
-    .session-buttons button { background: none; border: none; color: var(--text-color); cursor: pointer; opacity: 0; padding: 2px 4px; font-size: 0.9rem; transition: opacity 0.2s;}
-    #session-list li:hover .session-buttons button { opacity: 1; }
-    .sidebar-footer { padding: 1rem; border-top: 1px solid var(--border-color); font-size: 0.9rem; }
-    .footer-action { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0.5rem 0.25rem; }
-    #voice-chat-toggle { transform: scale(0.8); }
-    .chat-container { flex-grow: 1; display: flex; flex-direction: column; }
-    #chat-box { flex-grow: 1; padding: 1rem; overflow-y: auto; }
-    #new-chat-prompt-selector { padding: 0.5rem 1rem; border-bottom: 1px solid var(--border-color); background-color: var(--sidebar-bg); }
-    #prompt-select-dropdown { padding: 0.25rem; border-radius: 4px; border: 1px solid var(--input-border); background-color: var(--input-bg); color: var(--text-color); }
-    .message { margin-bottom: 1rem; max-width: 100%; display: flex; align-items: flex-start; gap: 10px; }
-    .message .avatar { border-radius: 50%; background-color: var(--sidebar-bg); flex-shrink: 0; object-fit: cover; }
-    .message.system { justify-content: center; max-width: 100%; }
-    .message.system .message-content { background-color: var(--system-msg-bg); color: var(--text-color); border: 1px solid var(--border-color); font-style: italic; text-align: center; font-size: 0.9em;}
-    .message-container { display: flex; flex-direction: column; max-width: 90%; }
-    .message-sender { font-weight: bold; margin-bottom: 4px; font-size: 0.9em; }
-    .message-content { padding: 0.75rem 1rem; border-radius: 10px; word-wrap: break-word; }
-    .message.user { flex-direction: row-reverse; }
-    .message.user .message-container { align-items: flex-end; }
-    .message.user .avatar { background-color: var(--user-msg-bg); padding: 5px; box-sizing: border-box; border-radius: 50%; }
-    .message.assistant .message-container { align-items: flex-start; }
-    .message.user .message-content { background-color: var(--user-msg-bg); border-top-right-radius: 0; }
-    .message.assistant .message-content { background-color: var(--ai-msg-bg); border-top-left-radius: 0; }
-    :global(.message-content pre) { background-color: #282c34; color: #abb2bf; padding: 1rem; border-radius: 5px; overflow-x: auto; position: relative; }
-    :global(.copy-btn) { position: absolute; top: 5px; right: 5px; background: #555; color: white; border: none; padding: 3px 6px; border-radius: 3px; cursor: pointer; opacity: 0.7; }
-    :global(.copy-btn:hover) { opacity: 1; }
-    .message-actions { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
-    .message-actions button { background: transparent; border: 1px solid var(--border-color); border-radius: 5px; padding: 4px 8px; cursor: pointer; color: var(--text-color); font-size: 1rem; }
-    .message-actions button.hidden { display: none; }
-    .message-actions button.playing { color: var(--button-bg); border-color: var(--button-bg); }
-    .input-area { border-top: 1px solid var(--border-color); padding: 1rem; display: flex; align-items: center; }
-    #input-message { flex-grow: 1; padding: 0.75rem; border: 1px solid var(--input-border); border-radius: 5px; font-size: 1rem; resize: none; background-color: var(--input-bg); color: var(--text-color); }
-    .hidden { display: none !important; }
-    #settings-overlay, #full-voice-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-    #full-voice-overlay { cursor: pointer; }
-    #settings-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: var(--bg-color); color: var(--text-color); padding: 2rem; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); z-index: 1001; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; }
-    :global(#settings-form fieldset) { border: 1px solid var(--border-color); border-radius: 4px; padding: 1rem; margin-bottom: 1.5rem; }
-    :global(#settings-form legend) { padding: 0 0.5rem; font-weight: bold; }
-    :global(#settings-form label) { display: block; margin-bottom: 0.5rem; }
-    :global(#settings-form input[type="text"]), :global(#settings-form input[type="number"]), :global(#settings-form textarea), :global(#settings-form select) { width: 100%; box-sizing: border-box; padding: 0.5rem; margin-bottom: 1rem; background-color: var(--input-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; }
-    :global(.prompt-editor-entry) { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.5rem 1rem; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-color); }
-    :global(.prompt-editor-entry:last-child) { border-bottom: none; }
-    :global(.prompt-editor-entry .prompt-title-wrapper) { grid-column: 1 / 2; }
-    :global(.prompt-editor-entry .prompt-name-wrapper) { grid-column: 2 / 3; }
-    :global(.prompt-editor-entry .remove-prompt-btn) { grid-column: 3 / 4; grid-row: 2 / 3; background-color: var(--danger-button-bg); color: var(--button-text); border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; }
-    :global(.prompt-editor-entry .prompt-icon-wrapper) { grid-column: 1 / 2; grid-row: 2 / 3; }
-    :global(.prompt-editor-entry textarea) { grid-column: 1 / 4; min-height: 80px; }
-    :global(.modal-buttons) { display: flex; justify-content: flex-end; gap: 1rem; }
-    :global(#add-prompt-btn) { justify-self: start; margin-bottom: 1rem; }
-    #pulsing-circle { width: 150px; height: 150px; border: 5px solid var(--button-bg); border-radius: 50%; animation: pulse 2s infinite ease-in-out; }
-    @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.7; } 70% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.7; } }
-    #voice-status-text { margin-top: 2rem; color: #ffffff; font-size: 1.5rem; text-shadow: 1px 1px 2px black; }
-    #menu-toggle-btn, #mobile-overlay { display: none; }
+    .day-cell:not([disabled]):not(.empty) { cursor: pointer; }
+    .day-cell:not([disabled]):hover { border-color: rgba(59, 130, 246, 0.8); background: rgba(59, 130, 246, 0.2); }
+    .day-cell[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .day-cell.empty { background: transparent; }
+    .day-cell[style*="--activity-level: 1"] { background-color: rgba(59, 130, 246, 0.2); }
+    .day-cell[style*="--activity-level: 2"] { background-color: rgba(59, 130, 246, 0.4); }
+    .day-cell[style*="--activity-level: 3"] { background-color: rgba(59, 130, 246, 0.7); }
+    .day-cell[style*="--activity-level: 4"] { background-color: rgba(59, 130, 246, 1.0); }
 
-    /* Icon Sizing CSS - Updated values for a wider range */
-    :global(.icon-size-small) .session-icon { width: 20px; height: 20px; }
-    :global(.icon-size-small) .message .avatar { width: 28px; height: 28px; }
-    :global(.icon-size-medium) .session-icon { width: 24px; height: 24px; }
-    :global(.icon-size-medium) .message .avatar { width: 32px; height: 32px; }
-    :global(.icon-size-large) .session-icon { width: 32px; height: 32px; }
-    :global(.icon-size-large) .message .avatar { width: 48px; height: 48px; }
-    :global(.icon-size-xl) .session-icon { width: 40px; height: 40px; }
-    :global(.icon-size-xl) .message .avatar { width: 96px; height: 96px; }
+    /* Tool Palette Widget */
+    .tool-palette-widget { grid-area: 2 / 2 / 3 / 3; }
+    .tool-palette-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1rem; flex-grow: 1; }
+    .tool-item {
+        background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 0.5rem; font-weight: 500; position: relative;
+    }
+    .tool-item.online::after {
+        content: ''; position: absolute; top: 12px; right: 12px; width: 8px; height: 8px;
+        border-radius: 50%; background-color: #4ade80; box-shadow: 0 0 8px 0 #4ade80;
+    }
+    .tool-item span:first-child { font-size: 1.75rem; }
+    .view-all-button {
+        margin-top: 1.5rem; padding: 0.75rem; width: 100%;
+        background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #e5e7eb; font-weight: 500; border-radius: 8px; cursor: pointer; transition: background 0.2s ease;
+    }
+    .view-all-button:hover { background: rgba(255, 255, 255, 0.15); }
 
-    /* --- Responsive Design for Mobile --- */
-    @media (max-width: 768px) {
-        #menu-toggle-btn {
-            display: block;
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            z-index: 1200;
-            background-color: var(--sidebar-bg);
-            color: var(--text-color);
-            border: 1px solid var(--border-color);
-            border-radius: 5px;
-            width: 44px;
-            height: 44px;
-            font-size: 24px;
-            line-height: 44px;
-            text-align: center;
-            cursor: pointer;
-            padding: 0;
-        }
+    /* Log Viewer Modal Styling */
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
+        z-index: 1000; display: grid; place-items: center;
+    }
+    .log-viewer-modal {
+        width: 90%; max-width: 600px;
+        background: #1f2937; border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px; padding: 1.5rem;
+        max-height: 80vh; display: flex; flex-direction: column;
+    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .modal-header h3 { margin: 0; }
+    .modal-header button { background: none; border: none; font-size: 2rem; color: #9ca3af; cursor: pointer; line-height: 1; }
+    .log-list {
+        list-style: none; padding: 1rem; margin: 0;
+        background: rgba(0,0,0,0.2); border-radius: 8px;
+        font-family: 'Menlo', monospace; font-size: 0.85rem;
+        overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem;
+    }
 
-        .sidebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 100%;
-            z-index: 1100;
-            transform: translateX(-100%);
-            transition: transform 0.3s ease-in-out;
-            width: 280px; /* Slightly wider for better touch targets */
-            box-shadow: 3px 0 15px rgba(0,0,0,0.2);
-        }
-
-        .sidebar.open {
-            transform: translateX(0);
-        }
-
-        #mobile-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: 1050; /* Below sidebar */
-        }
-
-        #mobile-overlay.active {
-            display: block;
-        }
-
-        .chat-container {
-            width: 100vw;
-        }
-
-        .input-area {
-            padding-bottom: calc(1rem + env(safe-area-inset-bottom));
-        }
-
-        :global(#settings-modal) {
-            width: 100%;
-            height: 100%;
-            max-width: none;
-            max-height: none;
-            border-radius: 0;
-            top: 0;
-            left: 0;
-            transform: none;
-            padding: 1rem;
-            box-sizing: border-box;
-            overflow-y: auto;
-        }
-
-        :global(.prompt-editor-entry) {
-            grid-template-columns: 1fr; /* Stack all elements */
-            gap: 0.5rem;
-        }
-
-        :global(.prompt-editor-entry > div),
-        :global(.prompt-editor-entry > textarea),
-        :global(.prompt-editor-entry > button) {
-            grid-column: 1 / -1; /* Make all items span the full width */
-            grid-row: auto; /* Let them stack naturally */
-        }
-
-        :global(.prompt-editor-entry .remove-prompt-btn) {
-            width: auto;
-            padding: 0.5rem 1rem;
-            justify-self: end; /* Align remove button to the right */
-            margin-top: 0.5rem;
-        }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 #4ade8077; }
+        70% { box-shadow: 0 0 0 8px #4ade8000; }
+        100% { box-shadow: 0 0 0 0 #4ade8000; }
     }
 </style>

@@ -88,32 +88,32 @@ services:
   ################################
   # IMAGE GENERATION SERVICE (Port: 5003)
   ################################
-  image-gen-service:
-    build:
-      context: ./services/image-gen-service
-    container_name: image_gen_service
-    restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
-    volumes:
-      - ./models/checkpoints:/app/checkpoints:ro
-      - ./models/loras:/app/loras:ro
-    networks:
-      - localai_net
-    environment:
-      - PORT=5003
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.image-gen-service.rule=Host(`${DOMAIN_NAME}`) && PathPrefix(`/api/image`)"
-      - "traefik.http.routers.image-gen-service.priority=5"
-      - "traefik.http.routers.image-gen-service.entrypoints=https"
-      - "traefik.http.routers.image-gen-service.tls=true"
-      - "traefik.http.services.image-gen-svc.loadbalancer.server.port=5003"
+#  image-gen-service:
+#    build:
+#      context: ./services/image-gen-service
+#    container_name: image_gen_service
+#    restart: unless-stopped
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              count: all
+#              capabilities: [ gpu ]
+#    volumes:
+#      - ./models/checkpoints:/app/checkpoints:ro
+#      - ./models/loras:/app/loras:ro
+#    networks:
+#      - localai_net
+#    environment:
+#      - PORT=5003
+#    labels:
+#      - "traefik.enable=true"
+#      - "traefik.http.routers.image-gen-service.rule=Host(`${DOMAIN_NAME}`) && PathPrefix(`/api/image`)"
+#      - "traefik.http.routers.image-gen-service.priority=5"
+#      - "traefik.http.routers.image-gen-service.entrypoints=https"
+#      - "traefik.http.routers.image-gen-service.tls=true"
+#      - "traefik.http.services.image-gen-svc.loadbalancer.server.port=5003"
 
   ################################
   # TTS SERVICE (Port: 5001)

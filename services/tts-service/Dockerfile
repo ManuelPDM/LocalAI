@@ -22,4 +22,4 @@ COPY ./app .
 EXPOSE 5001
 
 # Use gunicorn to run the application. It looks for the 'app' object in the 'main.py' file.
-CMD ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:5001", "main:app"]
+CMD gunicorn -w ${WORKERS:-1} -b "0.0.0.0:$PORT" main:app

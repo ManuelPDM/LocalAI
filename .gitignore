@@ -52,5 +52,5 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
-
+models/checkpoints
 docker-compose.override.yml

@@ -22,7 +22,7 @@ COPY ./app .
 
 # Expose the port. This is good practice for documentation and allows Docker
 # to map the port dynamically if needed. It will use the value of $PORT.
-EXPOSE $PORT
+EXPOSE 5003
 
 # The CMD now uses the $PORT environment variable. This makes the Dockerfile
 # completely reusable for any service on any port.

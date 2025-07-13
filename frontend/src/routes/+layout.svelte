@@ -30,6 +30,12 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m7 12 5 5 5-5"></path><path d="m7 7 5 5 5-5"></path></svg>
                 </a>
             </li>
+             <li class="nav-item">
+                <a href="/image-gen" class="nav-link" class:active={$page.url.pathname.startsWith('/image-gen')} title="Image Generation">
+                    <!-- Image Gen Icon -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                </a>
+            </li>
         </ul>
 
         <div class="nav-footer">
